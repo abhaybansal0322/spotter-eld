@@ -6,16 +6,12 @@ from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
 
 from .services.hos.constants import CYCLE_LIMIT_MIN, GRID_RESOLUTION_MIN, MINUTES_PER_HOUR
-from .services.hos.enums import DutyStatus
+from .services.route_index import simplify
 
 DEFAULT_TIMEZONE = "America/New_York"
 CYCLE_LIMIT_HOURS = CYCLE_LIMIT_MIN / MINUTES_PER_HOUR
-TOTAL_KEYS = {
-    DutyStatus.OFF_DUTY: "off",
-    DutyStatus.SLEEPER_BERTH: "sb",
-    DutyStatus.DRIVING: "drive",
-    DutyStatus.ON_DUTY_NOT_DRIVING: "on",
-}
+GEOMETRY_SIMPLIFY_EPSILON_DEG = 0.0001  # wire format only; RouteIndex keeps the full polyline for mile lookups
+COORDINATE_DECIMALS = 5  # about 1 m
 
 
 def _normalize(address):
@@ -24,6 +20,10 @@ def _normalize(address):
 
 def _hours(minutes):
     return minutes / MINUTES_PER_HOUR
+
+
+def _rounded(point):
+    return [round(point[0], COORDINATE_DECIMALS), round(point[1], COORDINATE_DECIMALS)]
 
 
 class TripPlanRequestSerializer(serializers.Serializer):
@@ -79,15 +79,16 @@ class ZonedDateTimeField(serializers.Field):
         return value.isoformat()
 
 
-class LatLngListField(serializers.ListField):
-    child = serializers.ListField(child=serializers.FloatField())
+class CoordinateField(serializers.FloatField):
+    def to_representation(self, value):
+        return round(float(value), COORDINATE_DECIMALS)
 
 
 class StopSerializer(serializers.Serializer):
     kind = serializers.CharField()
     at_mile = serializers.FloatField()
-    lat = serializers.FloatField()
-    lng = serializers.FloatField()
+    lat = CoordinateField()
+    lng = CoordinateField()
     label = serializers.CharField()
     arrive = ZonedDateTimeField()
     depart = ZonedDateTimeField()
@@ -104,8 +105,14 @@ class SummarySerializer(serializers.Serializer):
 
 
 class RouteSerializer(serializers.Serializer):
-    geometry = LatLngListField()
-    bbox = LatLngListField()
+    geometry = serializers.SerializerMethodField()
+    bbox = serializers.SerializerMethodField()
+
+    def get_geometry(self, route):
+        return [_rounded(point) for point in simplify(route.geometry, GEOMETRY_SIMPLIFY_EPSILON_DEG)]
+
+    def get_bbox(self, route):
+        return [_rounded(corner) for corner in route.bbox]
 
 
 class DaySerializer(serializers.Serializer):
@@ -144,7 +151,7 @@ class DaySerializer(serializers.Serializer):
         ]
 
     def get_totals(self, dated):
-        return {TOTAL_KEYS[status]: _hours(minutes) for status, minutes in dated.sheet.totals.items()}
+        return {status.name: _hours(minutes) for status, minutes in dated.sheet.totals.items()}
 
     def get_remarks(self, dated):
         return [{"at_min": at_min, "location": location} for at_min, location in dated.sheet.remarks]

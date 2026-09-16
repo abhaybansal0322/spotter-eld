@@ -2,6 +2,7 @@
 from functools import lru_cache
 
 from . import http
+from .errors import NotFoundError, UpstreamError
 
 SEARCH_URL = f"{http.ORS_BASE_URL}/geocode/search"
 REVERSE_URL = f"{http.ORS_BASE_URL}/geocode/reverse"
@@ -25,7 +26,7 @@ def reverse(lat, lng):
     key = (round(lat, REVERSE_CACHE_DECIMALS), round(lng, REVERSE_CACHE_DECIMALS))
     label = _reverse(*key, REVERSE_RADIUS_KM) or _reverse(*key, REVERSE_FALLBACK_RADIUS_KM)
     if label is None:
-        raise http.NotFoundError(f"no place within {REVERSE_FALLBACK_RADIUS_KM} km of {key}")
+        raise NotFoundError(f"no place within {REVERSE_FALLBACK_RADIUS_KM} km of {key}")
     return label
 
 
@@ -63,7 +64,7 @@ def _reverse(lat, lng, radius_km):
     )
     try:
         return _first_place(payload, f"{lat},{lng}")[2]
-    except http.NotFoundError:
+    except NotFoundError:
         return None
 
 
@@ -72,14 +73,14 @@ def _first_place(payload, query):
     try:
         features = payload["features"]
         if not features:
-            raise http.NotFoundError(f"no geocoding match for {query!r}")
+            raise NotFoundError(f"no geocoding match for {query!r}")
         feature = features[0]
         lng, lat = (float(value) for value in feature["geometry"]["coordinates"][:2])
         properties = feature["properties"]
         place = properties.get("locality") or properties.get("localadmin") or properties.get("county")
         state = properties.get("region_a")
     except (KeyError, IndexError, TypeError, ValueError, AttributeError) as error:
-        raise http.UpstreamError(f"malformed geocoding response for {query!r}") from error
+        raise UpstreamError(f"malformed geocoding response for {query!r}") from error
     if not place or not state:
-        raise http.NotFoundError(f"no usable place name for {query!r}")
+        raise NotFoundError(f"no usable place name for {query!r}")
     return lat, lng, f"{place}, {state}"

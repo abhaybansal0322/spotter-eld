@@ -7,6 +7,7 @@ import uuid
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from .models import Trip
@@ -19,7 +20,17 @@ class HealthView(APIView):
         return Response({"status": "ok"})
 
 
+class TripPlanBurstThrottle(AnonRateThrottle):
+    scope = "trip_plan_burst"
+
+
+class TripPlanDailyThrottle(AnonRateThrottle):
+    scope = "trip_plan_daily"
+
+
 class PlanTripView(APIView):
+    throttle_classes = (TripPlanBurstThrottle, TripPlanDailyThrottle)
+
     def post(self, request):
         request_serializer = TripPlanRequestSerializer(data=request.data)
         request_serializer.is_valid(raise_exception=True)

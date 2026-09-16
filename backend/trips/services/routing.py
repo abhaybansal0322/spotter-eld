@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 
 from . import http
+from .errors import NotFoundError, UpstreamError
 
 DIRECTIONS_URL = f"{http.ORS_BASE_URL}/v2/directions/driving-hgv/geojson"
 PLACEHOLDER_STEP_NAMES = frozenset({"", "-"})
@@ -28,7 +29,7 @@ def route(coordinates):
     body = {"coordinates": [[lng, lat] for lat, lng in coordinates], "units": "mi"}
     try:
         payload = http.request_json("POST", DIRECTIONS_URL, json=body, headers=http.ors_headers())
-    except http.UpstreamError as error:
+    except UpstreamError as error:
         not_found = _as_not_found(error)
         if not_found:
             raise not_found from error
@@ -37,10 +38,10 @@ def route(coordinates):
     try:
         features = payload["features"]
         if not features:
-            raise http.NotFoundError(NO_ROUTE_MESSAGE)
+            raise NotFoundError(NO_ROUTE_MESSAGE)
         return _parse(features[0])
     except (KeyError, IndexError, TypeError, ValueError, AttributeError) as error:
-        raise http.UpstreamError("malformed routing response") from error
+        raise UpstreamError("malformed routing response") from error
 
 
 def _as_not_found(error):
@@ -49,7 +50,7 @@ def _as_not_found(error):
     code = details.get("code") if isinstance(details, dict) else None
     message = details.get("message") if isinstance(details, dict) else None
     if error.status == ORS_NOT_FOUND_STATUS or (error.status == ORS_BAD_REQUEST_STATUS and code in ORS_NOT_FOUND_CODES):
-        return http.NotFoundError(message or NO_ROUTE_MESSAGE)
+        return NotFoundError(message or NO_ROUTE_MESSAGE)
     return None
 
 

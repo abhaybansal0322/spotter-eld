@@ -2,10 +2,14 @@
 import uuid
 
 import pytest
+from django.core.cache import cache
 
-from tests.conftest import straight_trip
+from tests.conftest import BASE_LNG, north_of_base, pelias_place, straight_trip
 from trips.models import LogDay, Stop, Trip
 from trips.services import http, planner
+from trips.services.errors import InputError, UpstreamError
+
+STATUSES = {"OFF_DUTY", "SLEEPER_BERTH", "DRIVING", "ON_DUTY_NOT_DRIVING"}
 
 PLAN_URL = "/api/trips/plan/"
 VALID = {
@@ -16,6 +20,14 @@ VALID = {
     "start_time": "2026-09-16T06:00:00-04:00",
     "timezone": "America/New_York",
 }
+
+
+@pytest.fixture(autouse=True)
+def clear_throttle_history():
+    """Throttle counters live in the cache; clear it so one test's requests never throttle the next."""
+    cache.clear()
+    yield
+    cache.clear()
 
 
 def test_health(api_client):
@@ -47,7 +59,8 @@ def test_valid_request_returns_201_and_full_contract(api_client, fake_ors):
         assert set(stop) == {"kind", "at_mile", "lat", "lng", "label", "arrive", "depart", "duration_hours"}
     for day in body["days"]:
         assert set(day) == {"date", "date_index", "header", "segments", "totals", "total_miles_driving", "remarks", "recap"}
-        assert set(day["totals"]) == {"off", "sb", "drive", "on"}
+        assert set(day["totals"]) == STATUSES
+        assert {segment["status"] for segment in day["segments"]} <= STATUSES
         assert set(day["recap"]) == {
             "on_duty_today_hours", "a_on_duty_last_7_days_hours", "b_available_tomorrow_hours", "c_on_duty_last_5_days_hours",
         }
@@ -131,16 +144,53 @@ def test_optional_start_time_and_timezone_default(api_client, fake_ors):
     assert int(arrive[14:16]) % 15 == 0 and arrive[17:19] == "00"
 
 
+def _unroutable(index):
+    message = f"Could not find routable point within a radius of 350.0 meters of specified coordinate {index}: -101.0 37.0."
+    return UpstreamError("HTTP 404", status=404, body={"error": {"code": 2010, "message": message}})
+
+
 @pytest.mark.django_db
-def test_unroutable_address_returns_422_with_upstream_message(api_client, fake_ors):
-    message = "Could not find routable point within a radius of 350.0 meters of specified coordinate 2: -101.0 36.0."
-    fake_ors(http.UpstreamError("HTTP 404", status=404, body={"error": {"code": 2010, "message": message}}))
+def test_unroutable_address_returns_422_naming_the_input(api_client, fake_ors):
+    fake_ors(_unroutable(2))
 
     response = _post(api_client)
 
     assert response.status_code == 422
-    assert response.json() == {"detail": message}
+    assert response.json() == {"detail": "No truck-accessible road was found near the dropoff location (Dropoff, CC)."}
     assert Trip.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_unroutable_index_maps_through_the_two_point_route(api_client, fake_ors):
+    fake = fake_ors(_unroutable(1))
+    fake.addresses["origin, aa"] = fake.addresses["pickup, bb"]  # starting at the pickup routes [current, dropoff]
+
+    response = _post(api_client)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "No truck-accessible road was found near the dropoff location (Dropoff, CC)."
+
+
+@pytest.mark.django_db
+def test_unparseable_route_error_falls_back_to_a_generic_sentence(api_client, fake_ors):
+    fake_ors(UpstreamError("HTTP 400", status=400, body={"error": {"code": 2009, "message": "Route could not be found."}}))
+
+    response = _post(api_client)
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "No drivable truck route connects these locations."}
+
+
+@pytest.mark.django_db
+def test_pickup_and_dropoff_at_the_same_coordinates_returns_422(api_client, fake_ors):
+    fake = fake_ors(straight_trip(50, 700))
+    fake.addresses["dropoff, cc"] = pelias_place(BASE_LNG, north_of_base(0)[0] + 1, "Pickup Annex", "BB")
+
+    response = _post(api_client)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "The pickup location (Pickup, BB) and dropoff location (Pickup Annex, BB) are the same place."
+    assert fake.urls(planner.routing.DIRECTIONS_URL) == []
 
 
 @pytest.mark.django_db
@@ -165,11 +215,9 @@ def test_ors_server_error_returns_502(api_client, fake_ors):
 
 
 @pytest.mark.django_db
-def test_value_error_from_the_service_returns_400(api_client, fake_ors, monkeypatch):
-    fake_ors(straight_trip(50, 700))
-
+def test_input_error_from_the_service_returns_400(api_client, monkeypatch):
     def reject(**kwargs):
-        raise ValueError("start_time must fall on a 15-minute boundary")
+        raise InputError("start_time must fall on a 15-minute boundary")
 
     monkeypatch.setattr("trips.views.plan_trip", reject)
 
@@ -177,6 +225,53 @@ def test_value_error_from_the_service_returns_400(api_client, fake_ors, monkeypa
 
     assert response.status_code == 400
     assert response.json() == {"detail": "start_time must fall on a 15-minute boundary"}
+
+
+@pytest.mark.django_db
+def test_unexpected_value_error_is_a_500_in_json(api_client, monkeypatch):
+    def broken(**kwargs):
+        raise ValueError("duration_min must be positive, got 0")
+
+    monkeypatch.setattr("trips.views.plan_trip", broken)
+    api_client.raise_request_exception = False
+
+    response = api_client.post(PLAN_URL, VALID, format="json")
+
+    assert response.status_code == 500
+    assert response["Content-Type"] == "application/json"
+    assert response.json() == {"detail": "Something went wrong on our side. Please try again."}
+    assert "duration_min" not in response.content.decode()
+
+
+def test_malformed_trip_id_returns_json_404(api_client):
+    response = api_client.get("/api/trips/abc/")
+
+    assert response.status_code == 404
+    assert response["Content-Type"] == "application/json"
+    assert response.json() == {"detail": "Not found."}
+
+
+@pytest.mark.django_db
+def test_sixth_plan_request_in_a_minute_is_throttled(api_client, fake_ors):
+    fake_ors(straight_trip(50, 700))
+
+    statuses = [_post(api_client).status_code for _ in range(6)]
+
+    assert statuses == [201, 201, 201, 201, 201, 429]
+    assert "throttled" in _post(api_client).json()["detail"]
+
+
+@pytest.mark.django_db
+def test_geometry_is_simplified_and_rounded(api_client, fake_ors):
+    fake_ors(straight_trip(50, 700))  # 71 collinear vertices
+
+    body = _post(api_client).json()
+
+    geometry = body["route"]["geometry"]
+    assert len(geometry) == 2  # a straight road needs only its ends
+    assert geometry[0] == [35.0, -101.0]
+    assert all(value == round(value, 5) for point in geometry + body["route"]["bbox"] for value in point)
+    assert all(stop["lat"] == round(stop["lat"], 5) and stop["lng"] == round(stop["lng"], 5) for stop in body["stops"])
 
 
 @pytest.mark.django_db

@@ -8,6 +8,8 @@ from django.core.exceptions import ImproperlyConfigured
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from .errors import NotFoundError, UpstreamError  # noqa: F401  re-exported for callers of the seam
+
 ORS_BASE_URL = "https://api.openrouteservice.org"
 
 CONNECT_TIMEOUT_S = 5
@@ -16,22 +18,6 @@ RETRY_TOTAL = 2
 RETRY_BACKOFF_FACTOR = 0.4  # worst case near 25 s, inside gunicorn --timeout 60
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 RETRY_METHODS = frozenset({"GET", "POST"})
-
-
-class UpstreamError(Exception):
-    """An upstream call failed, timed out, or answered with something unusable.
-
-    status is the HTTP code and body the parsed JSON error body, when the upstream sent them.
-    """
-
-    def __init__(self, message, status=None, body=None):
-        super().__init__(message)
-        self.status = status
-        self.body = body
-
-
-class NotFoundError(Exception):
-    """An upstream call succeeded but matched nothing: no such place, no drivable route."""
 
 
 def _build_session():

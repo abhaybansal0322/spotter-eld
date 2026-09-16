@@ -4,7 +4,7 @@ import math
 import pytest
 
 from trips.services import route_index
-from trips.services.route_index import EARTH_RADIUS_MI, RouteIndex, road_at
+from trips.services.route_index import EARTH_RADIUS_MI, RouteIndex, road_at, simplify
 
 # Along a meridian, haversine distance is exactly proportional to latitude, so expected points are exact.
 DEGREES_PER_MILE = 180 / (math.pi * EARTH_RADIUS_MI)
@@ -137,3 +137,61 @@ def test_lookups_are_logarithmic_and_distances_are_built_once(monkeypatch):
     # read thousands per call; this bound allows 20 per call and fails by orders of magnitude on a scan.
     assert _CountingList.reads <= queries * 20
     assert _close(index.coordinate_at(4321.5), _north(4321.5), tolerance=1e-6)
+
+
+def test_simplify_collapses_a_straight_line_to_its_ends():
+    line = [(35.0 + step * 0.01, -101.0 + step * 0.02) for step in range(100)]
+
+    assert simplify(line, 0.0001) == [line[0], line[-1]]
+
+
+def test_simplify_keeps_a_sharp_corner():
+    out_and_back = [(35.0 + step * 0.01, -101.0) for step in range(50)] + [(35.49, -101.0 + step * 0.01) for step in range(1, 50)]
+
+    simplified = simplify(out_and_back, 0.0001)
+
+    assert simplified == [out_and_back[0], (35.49, -101.0), out_and_back[-1]]
+
+
+def test_simplify_returns_an_ordered_subset_with_both_ends():
+    import random
+
+    rng = random.Random(7)
+    walk = [(35.0, -101.0)]
+    for _ in range(2_000):
+        lat, lng = walk[-1]
+        walk.append((lat + rng.uniform(-0.01, 0.01), lng + rng.uniform(-0.01, 0.01)))
+
+    simplified = simplify(walk, 0.005)
+
+    assert simplified[0] == walk[0] and simplified[-1] == walk[-1]
+    positions = [walk.index(point) for point in simplified]
+    assert positions == sorted(positions)
+    assert 2 < len(simplified) < len(walk)
+
+
+@pytest.mark.parametrize("points", [[], [(1.0, 2.0)], [(1.0, 2.0), (3.0, 4.0)]], ids=["empty", "one", "two"])
+def test_simplify_short_inputs_are_unchanged(points):
+    assert simplify(points, 0.0001) == points
+
+
+def test_simplify_handles_fifty_thousand_points_without_recursion():
+    import random
+    import sys
+
+    # A long noisy highway: tens of thousands of vertices, many of them significant at this tolerance.
+    rng = random.Random(1)
+    road, lat, lng = [], 35.0, -101.0
+    for _ in range(50_000):
+        lat += 0.0002 + rng.uniform(-0.00005, 0.00005)
+        lng += rng.uniform(-0.0002, 0.0002)
+        road.append((lat, lng))
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(200)  # a recursive implementation would need far more than this
+    try:
+        simplified = simplify(road, 0.0001)
+    finally:
+        sys.setrecursionlimit(limit)
+
+    assert simplified[0] == road[0] and simplified[-1] == road[-1]
+    assert len(simplified) > 1_000

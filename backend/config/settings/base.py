@@ -57,6 +57,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
     "UNAUTHENTICATED_USER": None,
     "EXCEPTION_HANDLER": "trips.exceptions.api_exception_handler",
+    # Sized to stay under the ORS free quota; each plan costs several geocoding calls and one routing call.
+    "DEFAULT_THROTTLE_RATES": {"trip_plan_burst": "5/min", "trip_plan_daily": "100/day"},
 }
 
 LANGUAGE_CODE = "en-us"

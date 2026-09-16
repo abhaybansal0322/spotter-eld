@@ -5,11 +5,13 @@ minutes since trip start into wall-clock times in the home terminal zone. The HO
 a datetime; this module is where they come back in.
 """
 import math
+import re
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import geocode, http, routing
+from . import geocode, routing
+from .errors import InputError, NotFoundError, UpstreamError
 from .hos import constants
 from .hos.constants import (
     DROPOFF_DURATION_MIN,
@@ -26,7 +28,8 @@ from .hos.sheets import DaySheet, build_sheets
 from .hos.state import DriverState, replay
 from .route_index import RouteIndex, road_at
 
-SAME_PLACE_EPSILON_DEG = 0.001  # about 110 m: current location and pickup closer than this are one place
+SAME_PLACE_EPSILON_DEG = 0.001  # about 110 m: two geocoded inputs closer than this are one place
+ORS_COORDINATE_INDEX = re.compile(r"coordinate (\d+)")  # ORS error 2010 names the 0-based index of the bad point
 
 
 @dataclass(frozen=True)
@@ -73,18 +76,22 @@ def plan_trip(current, pickup, dropoff, cycle_used_min, start_time, tz_name):
     """Plan a property-carrying trip from the current location via pickup to dropoff.
 
     Raises NotFoundError naming the input that could not be geocoded, or when no truck route exists;
-    UpstreamError when ORS fails; ValueError when start_time is not on the 15-minute grid.
+    UpstreamError when ORS fails; InputError when start_time is not on the 15-minute grid.
     """
     zone = ZoneInfo(tz_name)
     local_start = _localize(start_time, zone)
     midnight = minutes_to_first_midnight(local_start, tz_name)
 
-    places = [_geocode_input(role, address) for role, address in
-              (("current location", current), ("pickup location", pickup), ("dropoff location", dropoff))]
+    roles = ("current location", "pickup location", "dropoff location")
+    places = [_geocode_input(role, address) for role, address in zip(roles, (current, pickup, dropoff))]
+    if _same_place(places[1], places[2]):
+        raise NotFoundError(
+            f"The pickup location ({places[1][2]}) and dropoff location ({places[2][2]}) are the same place."
+        )
     # Starting at the pickup: route two points rather than rely on ORS accepting a zero-length leg.
     starts_at_pickup = _same_place(places[0], places[1])
-    routed = [places[0], places[2]] if starts_at_pickup else places
-    route = routing.route([(lat, lng) for lat, lng, _ in routed])
+    routed = [(roles[0], places[0]), (roles[2], places[2])] if starts_at_pickup else list(zip(roles, places))
+    route = _route(routed)
     index = RouteIndex(route.geometry, route.total_miles)
 
     pickup_mile = 0.0 if starts_at_pickup else min(route.leg_miles[0], route.total_miles)
@@ -146,7 +153,7 @@ def limits():
 def _localize(start_time, zone):
     local = start_time.astimezone(zone) if start_time.tzinfo else start_time.replace(tzinfo=zone)
     if local.minute % GRID_RESOLUTION_MIN or local.second or local.microsecond:
-        raise ValueError(f"start_time must fall on a {GRID_RESOLUTION_MIN}-minute boundary, got {local.isoformat()}")
+        raise InputError(f"start_time must fall on a {GRID_RESOLUTION_MIN}-minute boundary, got {local.isoformat()}")
     return local
 
 
@@ -157,8 +164,25 @@ def _same_place(first, second):
 def _geocode_input(role, address):
     try:
         return geocode.forward(address)
-    except http.NotFoundError as error:
-        raise http.NotFoundError(f"Could not find the {role}: {address!r}") from error
+    except NotFoundError as error:
+        raise NotFoundError(f"Could not find the {role}: {address!r}") from error
+
+
+def _route(routed):
+    """Route (role, place) pairs, rewriting "no route" errors to name the input a driver would recognise."""
+    try:
+        return routing.route([(lat, lng) for _, (lat, lng, _) in routed])
+    except NotFoundError as error:
+        raise NotFoundError(_unroutable_message(str(error), routed)) from error
+
+
+def _unroutable_message(upstream_message, routed):
+    """Best effort: ORS names the failing point by its index in the routed list, which may be two points or three."""
+    match = ORS_COORDINATE_INDEX.search(upstream_message)
+    if match and int(match.group(1)) < len(routed):
+        role, (_, _, label) = routed[int(match.group(1))]
+        return f"No truck-accessible road was found near the {role} ({label})."
+    return "No drivable truck route connects these locations."
 
 
 def _name_miles(events, index, named_points, waypoints):
@@ -177,7 +201,7 @@ def _name_mile(mile, index, named_points, anchors):
     lat, lng = index.coordinate_at(mile)
     try:
         return geocode.reverse(lat, lng)
-    except (http.NotFoundError, http.UpstreamError):
+    except (NotFoundError, UpstreamError):
         pass  # naming is best effort; a flaky reverse lookup must not fail a plan that already has its route
     _, city = min(anchors, key=lambda anchor: abs(anchor[0] - mile))
     road = road_at(mile, named_points)

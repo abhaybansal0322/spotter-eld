@@ -53,3 +53,36 @@ def road_at(mile, named_points):
     """
     position = bisect_right(named_points, mile, key=lambda point: point[0])
     return named_points[position - 1][1] if position else None
+
+
+def simplify(points, epsilon):
+    """Douglas-Peucker in coordinate space: the subset of points, first and last always kept, that stays within
+    epsilon of the original line. Iterative with an explicit stack, so a 50,000-point route cannot exhaust recursion."""
+    points = list(points)
+    if len(points) < 3:
+        return points
+    keep = [False] * len(points)
+    keep[0] = keep[-1] = True
+    spans = [(0, len(points) - 1)]
+    while spans:
+        first, last = spans.pop()
+        farthest, farthest_distance = None, epsilon
+        for index in range(first + 1, last):
+            distance = _distance_to_segment(points[index], points[first], points[last])
+            if distance > farthest_distance:
+                farthest, farthest_distance = index, distance
+        if farthest is not None:
+            keep[farthest] = True
+            spans.append((first, farthest))
+            spans.append((farthest, last))
+    return [point for point, kept in zip(points, keep) if kept]
+
+
+def _distance_to_segment(point, start, end):
+    (py, px), (ay, ax), (by, bx) = point, start, end
+    dx, dy = bx - ax, by - ay
+    length_squared = dx * dx + dy * dy
+    if length_squared == 0:
+        return math.hypot(px - ax, py - ay)
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length_squared))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
