@@ -23,8 +23,10 @@ from .hos.enums import DutyStatus, StopKind
 from .hos.events import Waypoint
 from .hos.segments import split_at_midnight
 from .hos.sheets import DaySheet, build_sheets
-from .hos.state import DriverState, advance_day, apply_event
-from .route_index import RouteIndex
+from .hos.state import DriverState, replay
+from .route_index import RouteIndex, road_at
+
+SAME_PLACE_EPSILON_DEG = 0.001  # about 110 m: current location and pickup closer than this are one place
 
 
 @dataclass(frozen=True)
@@ -79,10 +81,13 @@ def plan_trip(current, pickup, dropoff, cycle_used_min, start_time, tz_name):
 
     places = [_geocode_input(role, address) for role, address in
               (("current location", current), ("pickup location", pickup), ("dropoff location", dropoff))]
-    route = routing.route([(lat, lng) for lat, lng, _ in places])
+    # Starting at the pickup: route two points rather than rely on ORS accepting a zero-length leg.
+    starts_at_pickup = _same_place(places[0], places[1])
+    routed = [places[0], places[2]] if starts_at_pickup else places
+    route = routing.route([(lat, lng) for lat, lng, _ in routed])
     index = RouteIndex(route.geometry, route.total_miles)
 
-    pickup_mile = min(route.leg_miles[0], route.total_miles)
+    pickup_mile = 0.0 if starts_at_pickup else min(route.leg_miles[0], route.total_miles)
     waypoints = (
         Waypoint(0.0, StopKind.START, places[0][2], 0),
         Waypoint(pickup_mile, StopKind.PICKUP, places[1][2], PICKUP_DURATION_MIN),
@@ -105,7 +110,7 @@ def plan_trip(current, pickup, dropoff, cycle_used_min, start_time, tz_name):
         events=events,
         stops=_stops(events, waypoints[0], index, local_start),
         sheets=[DatedSheet(local_start.date() + timedelta(days=sheet.date_index), sheet) for sheet in sheets],
-        summary=_summary(events, route, len(sheets), _final_state(events, initial_state, midnight)),
+        summary=_summary(events, route, len(sheets), replay(events, initial_state, midnight)),
         limits=limits(),
     )
 
@@ -145,6 +150,10 @@ def _localize(start_time, zone):
     return local
 
 
+def _same_place(first, second):
+    return abs(first[0] - second[0]) <= SAME_PLACE_EPSILON_DEG and abs(first[1] - second[1]) <= SAME_PLACE_EPSILON_DEG
+
+
 def _geocode_input(role, address):
     try:
         return geocode.forward(address)
@@ -171,7 +180,7 @@ def _name_mile(mile, index, named_points, anchors):
     except (http.NotFoundError, http.UpstreamError):
         pass  # naming is best effort; a flaky reverse lookup must not fail a plan that already has its route
     _, city = min(anchors, key=lambda anchor: abs(anchor[0] - mile))
-    road = index.nearest_named(mile, named_points)
+    road = road_at(mile, named_points)
     return f"{road} near {city}" if road else f"Near {city}"
 
 
@@ -201,17 +210,6 @@ def _stops(events, start, index, local_start):
             duration_hours=(end_min - start_min) / MINUTES_PER_HOUR,
         ))
     return stops
-
-
-def _final_state(events, initial_state, minutes_to_first_midnight):
-    """Replay the timeline for the end-of-trip cycle. plan_duty returns only events, not its final state."""
-    state, next_midnight = initial_state, minutes_to_first_midnight
-    for event in events:
-        state = apply_event(state, event)
-        while event.end_min >= next_midnight:
-            state = advance_day(state)
-            next_midnight += MINUTES_PER_DAY
-    return state
 
 
 def _summary(events, route, day_count, final_state):

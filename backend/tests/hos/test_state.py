@@ -3,7 +3,7 @@ from dataclasses import replace
 
 from trips.services.hos.enums import DutyStatus, StopKind
 from trips.services.hos.events import DutyEvent
-from trips.services.hos.state import DriverState, advance_day, apply_event
+from trips.services.hos.state import DriverState, advance_day, apply_event, replay
 
 
 def _event(status, duration_min, start_min=0, kind=None):
@@ -192,3 +192,49 @@ def test_rule_4_driving_breaks_the_non_driving_run():
 
     assert state.non_driving_run_min == 15
     assert state.since_break_min == 435
+
+
+def _timeline(*blocks, kinds=None):
+    """Contiguous events from (status, duration) pairs, starting at minute 0."""
+    events, start = [], 0
+    for index, (status, duration) in enumerate(blocks):
+        events.append(DutyEvent(status=status, start_min=start, duration_min=duration, at_mile=0.0,
+                                kind=(kinds or {}).get(index)))
+        start += duration
+    return events
+
+
+def test_replay_folds_events_and_opens_a_day_at_each_midnight():
+    # 22:00 start: two hours of work before midnight, a 10-hour sleeper across it, then an hour of work.
+    events = _timeline(
+        (DutyStatus.ON_DUTY_NOT_DRIVING, 60), (DutyStatus.DRIVING, 60),
+        (DutyStatus.SLEEPER_BERTH, 600), (DutyStatus.DRIVING, 60),
+    )
+
+    state = replay(events, DriverState.initial(prior_cycle_min=300), minutes_to_first_midnight=120)
+
+    assert state.day_on_duty == (300, 120, 60)
+    assert state.cycle_min == 480
+    assert (state.driving_min, state.window_min, state.window_open) == (60, 60, True)
+
+
+def test_replay_event_ending_exactly_at_midnight_opens_the_next_day():
+    events = _timeline((DutyStatus.DRIVING, 120))
+
+    assert replay(events, DriverState.initial(0), 120).day_on_duty == (0, 120, 0)
+
+
+def test_replay_restart_flattens_the_cycle():
+    events = _timeline((DutyStatus.OFF_DUTY, 2040), (DutyStatus.DRIVING, 60), kinds={0: StopKind.RESTART})
+
+    state = replay(events, DriverState.initial(prior_cycle_min=4200), 1080)
+
+    # The restart flattens the ledger to (0,), its one midnight opens a new day, and the drive lands there.
+    assert state.day_on_duty == (0, 60)
+    assert state.cycle_min == 60
+
+
+def test_replay_of_no_events_is_the_initial_state():
+    initial = DriverState.initial(750)
+
+    assert replay([], initial, 1080) == initial

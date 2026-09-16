@@ -1,7 +1,7 @@
 """DriverState accumulators and the pure apply_event function (spec §24)."""
 from dataclasses import dataclass, replace
 
-from .constants import AVG_SPEED_MPH, BREAK_QUALIFY_MIN, CYCLE_DAYS, MINUTES_PER_HOUR, QUALIFYING_REST_MIN
+from .constants import AVG_SPEED_MPH, BREAK_QUALIFY_MIN, CYCLE_DAYS, MINUTES_PER_DAY, MINUTES_PER_HOUR, QUALIFYING_REST_MIN
 from .enums import DutyStatus, StopKind
 
 _WORK = frozenset({DutyStatus.DRIVING, DutyStatus.ON_DUTY_NOT_DRIVING})
@@ -97,3 +97,14 @@ def apply_event(state, event):
 def advance_day(state):
     """Open a new calendar day in the cycle ledger."""
     return replace(state, day_on_duty=(*state.day_on_duty, 0))
+
+
+def replay(events, initial_state, minutes_to_first_midnight):
+    """Fold a finished, contiguous event list back through apply_event and advance_day, giving the end state."""
+    state, next_midnight = initial_state, minutes_to_first_midnight
+    for event in events:
+        state = apply_event(state, event)
+        while event.end_min >= next_midnight:
+            state = advance_day(state)
+            next_midnight += MINUTES_PER_DAY
+    return state

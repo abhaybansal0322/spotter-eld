@@ -4,7 +4,7 @@ import math
 import pytest
 
 from trips.services import route_index
-from trips.services.route_index import EARTH_RADIUS_MI, NEAREST_NAMED_MAX_MI, RouteIndex
+from trips.services.route_index import EARTH_RADIUS_MI, RouteIndex, road_at
 
 # Along a meridian, haversine distance is exactly proportional to latitude, so expected points are exact.
 DEGREES_PER_MILE = 180 / (math.pi * EARTH_RADIUS_MI)
@@ -55,18 +55,21 @@ def test_road_distance_scales_the_polyline():
     assert index.coordinate_at(100) == geometry[-1]
 
 
-def test_nearest_named():
-    index = RouteIndex([_north(0), _north(500)], total_miles=500)
-    steps = [(0.0, "Richmond, VA"), (52.0, "Fredericksburg, VA"), (108.0, "Washington, DC"), (150.0, "Baltimore, MD")]
+def test_road_at_is_containment_not_nearest():
+    steps = [(0.0, "Broadway"), (0.8, "I-25 N"), (350.8, "US-87 N")]
 
-    assert index.nearest_named(60, steps) == "Fredericksburg, VA"
-    assert index.nearest_named(90, steps) == "Washington, DC"
-    assert index.nearest_named(80, steps) is None  # 28 miles either way, beyond the threshold
-    assert index.nearest_named(-5, steps) == "Richmond, VA"
-    assert index.nearest_named(20, [(10.0, "Ashland, VA"), (30.0, "Doswell, VA")]) == "Ashland, VA"  # tie: earlier
-    assert index.nearest_named(150 + NEAREST_NAMED_MAX_MI, steps) == "Baltimore, MD"
-    assert index.nearest_named(150 + NEAREST_NAMED_MAX_MI + 0.5, steps) is None
-    assert index.nearest_named(60, []) is None
+    assert road_at(0.0, steps) == "Broadway"
+    assert road_at(0.5, steps) == "Broadway"
+    assert road_at(0.8, steps) == "I-25 N"  # a step owns its own starting mile
+    assert road_at(250.8, steps) == "I-25 N"  # 250 miles into a 350-mile step is still on that road
+    assert road_at(350.8, steps) == "US-87 N"
+    assert road_at(10_000, steps) == "US-87 N"
+
+
+def test_road_at_before_the_first_step_or_without_steps():
+    assert road_at(4.9, [(5.0, "I-80 W")]) is None
+    assert road_at(-1, [(0.0, "Broadway")]) is None
+    assert road_at(60, []) is None
 
 
 @pytest.mark.parametrize(

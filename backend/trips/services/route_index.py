@@ -1,8 +1,7 @@
 """Pure mile-to-coordinate lookup, bisect over cumulative distance."""
 import math
-from bisect import bisect_left, bisect_right
+from bisect import bisect_right
 
-NEAREST_NAMED_MAX_MI = 25  # beyond this, a step name no longer describes where the driver is
 EARTH_RADIUS_MI = 3958.8
 
 
@@ -45,14 +44,12 @@ class RouteIndex:
         (lat1, lng1), (lat2, lng2) = self._points[upper - 1], self._points[upper]
         return (lat1 + (lat2 - lat1) * fraction, lng1 + (lng2 - lng1) * fraction)
 
-    def nearest_named(self, mile, named_points):
-        """Label of the (mile, label) point closest to mile, or None when nothing is within NEAREST_NAMED_MAX_MI.
 
-        named_points must be sorted by mile, which the ORS step list already is. Ties go to the earlier point.
-        """
-        position = bisect_left(named_points, mile, key=lambda point: point[0])
-        candidates = named_points[max(0, position - 1):position + 1]
-        if not candidates:
-            return None
-        nearest_mile, label = min(candidates, key=lambda point: abs(point[0] - mile))
-        return label if abs(nearest_mile - mile) <= NEAREST_NAMED_MAX_MI else None
+def road_at(mile, named_points):
+    """The road the driver is on at mile: the last (mile, road) step starting at or before it.
+
+    A containment lookup with no distance threshold, because one interstate step can run hundreds of miles.
+    None only when mile precedes the first named step. named_points must be sorted by mile, as ORS steps are.
+    """
+    position = bisect_right(named_points, mile, key=lambda point: point[0])
+    return named_points[position - 1][1] if position else None

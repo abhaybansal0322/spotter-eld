@@ -5,7 +5,7 @@ from trips.services.hos.constants import AVG_SPEED_MPH, GRID_RESOLUTION_MIN, MIN
 from trips.services.hos.engine import plan_duty
 from trips.services.hos.enums import DutyStatus, StopKind
 from trips.services.hos.events import Waypoint
-from trips.services.hos.state import DriverState, advance_day, apply_event
+from trips.services.hos.state import DriverState, replay
 
 WORK = {DutyStatus.DRIVING, DutyStatus.ON_DUTY_NOT_DRIVING}
 REST_KINDS = {StopKind.BREAK, StopKind.REST, StopKind.RESTART}
@@ -121,12 +121,7 @@ def test_scenario_5_multi_day_fuel_and_cycle():
         assert 1000 - GRID_RESOLUTION_MIN / MINUTES_PER_HOUR * AVG_SPEED_MPH < derived_miles <= 1000
         previous = i
 
-    state, next_midnight = initial, midnight
-    for event in events:
-        state = apply_event(state, event)
-        while event.end_min >= next_midnight:
-            state = advance_day(state)
-            next_midnight += MINUTES_PER_DAY
+    state = replay(events, initial, midnight)
     assert state.day_on_duty == (600, 720, 690, 690, 285)  # prior seed, then four calendar days
     assert state.cycle_min == 600 + sum(e.duration_min for e in events if e.status in WORK)
 
