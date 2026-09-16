@@ -32,6 +32,16 @@ def test_route_parses_geometry_distance_and_bbox(ors_directions_denver_to_cheyen
 
 
 @responses.activate
+def test_leg_miles_are_per_segment_and_sum_to_total(ors_directions_denver_to_cheyenne):
+    responses.post(routing.DIRECTIONS_URL, json=ors_directions_denver_to_cheyenne)
+
+    result = routing.route([DENVER, LOVELAND, CHEYENNE])
+
+    assert result.leg_miles == [41.0, 60.3]
+    assert sum(result.leg_miles) == pytest.approx(result.total_miles, abs=0.05)
+
+
+@responses.activate
 def test_route_swaps_ors_lng_lat_order(ors_directions_denver_to_cheyenne):
     responses.post(routing.DIRECTIONS_URL, json=ors_directions_denver_to_cheyenne)
 
@@ -85,8 +95,38 @@ def test_ors_404_unroutable_point_raises_not_found():
         json={"error": {"code": 2010, "message": "Could not find routable point within a radius of 350.0 meters"}},
     )
 
-    with pytest.raises(http.NotFoundError):
+    with pytest.raises(http.NotFoundError, match="Could not find routable point"):
         routing.route([DENVER, (0.0, -150.0)])
+
+
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        (2004, "Request parameters exceed the server configuration limits. The approximated route distance must not be greater than 6000000.0 meters."),
+        (2009, "Route could not be found - Unable to find a route between points 1 (-104.99 39.74) and 2 (-150.0 0.0)."),
+        (2010, "Could not find routable point within a radius of 350.0 meters of specified coordinate 1: -150.0 0.0."),
+    ],
+    ids=["2004-too-long", "2009-no-route", "2010-unroutable-point"],
+)
+@responses.activate
+def test_ors_400_route_codes_raise_not_found_with_upstream_message(code, message):
+    responses.post(routing.DIRECTIONS_URL, status=400, json={"error": {"code": code, "message": message}})
+
+    with pytest.raises(http.NotFoundError) as raised:
+        routing.route([DENVER, (0.0, -150.0)])
+
+    assert str(raised.value) == message
+
+
+@responses.activate
+def test_ors_400_with_other_codes_stays_upstream_error():
+    responses.post(routing.DIRECTIONS_URL, status=400, json={"error": {"code": 2003, "message": "Parameter 'units' has incorrect value"}})
+
+    with pytest.raises(http.UpstreamError) as raised:
+        routing.route([DENVER, CHEYENNE])
+
+    assert type(raised.value) is http.UpstreamError
+    assert raised.value.status == 400
 
 
 @pytest.mark.parametrize(
@@ -129,7 +169,7 @@ def test_503_retries_then_succeeds(ors_directions_denver_to_cheyenne):
 
 @responses.activate(registry=registries.OrderedRegistry)
 def test_persistent_500_raises_upstream_error_not_requests_exception():
-    for _ in range(5):
+    for _ in range(4):
         responses.post(routing.DIRECTIONS_URL, status=500)
 
     with pytest.raises(http.UpstreamError) as raised:
@@ -137,7 +177,7 @@ def test_persistent_500_raises_upstream_error_not_requests_exception():
 
     assert raised.value.status == 500
     assert type(raised.value) is http.UpstreamError
-    assert len(responses.calls) == 4  # the first attempt plus exactly 3 retries, then give up
+    assert len(responses.calls) == 3  # the first attempt plus exactly 2 retries, then give up
 
 
 def test_missing_api_key_fails_loudly_before_any_call(settings):

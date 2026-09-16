@@ -6,6 +6,9 @@ from . import http
 SEARCH_URL = f"{http.ORS_BASE_URL}/geocode/search"
 REVERSE_URL = f"{http.ORS_BASE_URL}/geocode/reverse"
 REVERSE_CACHE_DECIMALS = 3  # about 110 metres of latitude
+REVERSE_RADIUS_KM = 25
+REVERSE_FALLBACK_RADIUS_KM = 150  # rural interstates often have no locality within the first radius
+REVERSE_LAYERS = "locality,localadmin,county"
 CACHE_SIZE = 1024
 
 
@@ -18,8 +21,12 @@ def forward(address):
 
 
 def reverse(lat, lng):
-    """"City, ST" for a coordinate. Raises NotFoundError when nothing nearby has a usable place name."""
-    return _reverse(round(lat, REVERSE_CACHE_DECIMALS), round(lng, REVERSE_CACHE_DECIMALS))
+    """"City, ST" for a coordinate, widening the search radius once. NotFoundError when neither radius finds a place."""
+    key = (round(lat, REVERSE_CACHE_DECIMALS), round(lng, REVERSE_CACHE_DECIMALS))
+    label = _reverse(*key, REVERSE_RADIUS_KM) or _reverse(*key, REVERSE_FALLBACK_RADIUS_KM)
+    if label is None:
+        raise http.NotFoundError(f"no place within {REVERSE_FALLBACK_RADIUS_KM} km of {key}")
+    return label
 
 
 def clear_caches():
@@ -40,14 +47,24 @@ def _forward(normalized_address):
 
 
 @lru_cache(maxsize=CACHE_SIZE)
-def _reverse(lat, lng):
+def _reverse(lat, lng, radius_km):
+    """Label, or None on a miss so the miss is cached too. Upstream failures raise and are not cached."""
     payload = http.request_json(
         "GET",
         REVERSE_URL,
-        params={"point.lat": lat, "point.lon": lng, "size": 1},
+        params={
+            "point.lat": lat,
+            "point.lon": lng,
+            "size": 1,
+            "boundary.circle.radius": radius_km,
+            "layers": REVERSE_LAYERS,
+        },
         headers=http.ors_headers(),
     )
-    return _first_place(payload, f"{lat},{lng}")[2]
+    try:
+        return _first_place(payload, f"{lat},{lng}")[2]
+    except http.NotFoundError:
+        return None
 
 
 def _first_place(payload, query):
@@ -59,7 +76,7 @@ def _first_place(payload, query):
         feature = features[0]
         lng, lat = (float(value) for value in feature["geometry"]["coordinates"][:2])
         properties = feature["properties"]
-        place = properties.get("locality") or properties.get("county") or properties.get("region")
+        place = properties.get("locality") or properties.get("localadmin") or properties.get("county")
         state = properties.get("region_a")
     except (KeyError, IndexError, TypeError, ValueError, AttributeError) as error:
         raise http.UpstreamError(f"malformed geocoding response for {query!r}") from error

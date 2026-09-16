@@ -11,19 +11,23 @@ from urllib3.util.retry import Retry
 ORS_BASE_URL = "https://api.openrouteservice.org"
 
 CONNECT_TIMEOUT_S = 5
-READ_TIMEOUT_S = 15
-RETRY_TOTAL = 3
-RETRY_BACKOFF_FACTOR = 0.5
+READ_TIMEOUT_S = 8
+RETRY_TOTAL = 2
+RETRY_BACKOFF_FACTOR = 0.4  # worst case near 25 s, inside gunicorn --timeout 60
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 RETRY_METHODS = frozenset({"GET", "POST"})
 
 
 class UpstreamError(Exception):
-    """An upstream call failed, timed out, or answered with something unusable. status is the HTTP code, if any."""
+    """An upstream call failed, timed out, or answered with something unusable.
 
-    def __init__(self, message, status=None):
+    status is the HTTP code and body the parsed JSON error body, when the upstream sent them.
+    """
+
+    def __init__(self, message, status=None, body=None):
         super().__init__(message)
         self.status = status
+        self.body = body
 
 
 class NotFoundError(Exception):
@@ -57,7 +61,11 @@ def request_json(method, url, **kwargs):
         return response.json()
     except requests.HTTPError as error:
         status = error.response.status_code
-        raise UpstreamError(f"{method} {url} returned HTTP {status}", status=status) from error
+        try:
+            body = error.response.json()
+        except ValueError:
+            body = None
+        raise UpstreamError(f"{method} {url} returned HTTP {status}", status=status, body=body) from error
     except (requests.RequestException, ValueError) as error:
         raise UpstreamError(f"{method} {url} failed: {type(error).__name__}") from error
 
