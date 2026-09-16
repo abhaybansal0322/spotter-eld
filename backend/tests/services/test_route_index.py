@@ -1,0 +1,136 @@
+"""RouteIndex mile-to-coordinate tests over hand-built polylines."""
+import math
+
+import pytest
+
+from trips.services import route_index
+from trips.services.route_index import EARTH_RADIUS_MI, NEAREST_NAMED_MAX_MI, RouteIndex
+
+# Along a meridian, haversine distance is exactly proportional to latitude, so expected points are exact.
+DEGREES_PER_MILE = 180 / (math.pi * EARTH_RADIUS_MI)
+
+
+def _north(miles, lng=-77.0):
+    return (miles * DEGREES_PER_MILE, lng)
+
+
+def _close(actual, expected, tolerance=1e-9):
+    return all(abs(a - e) <= tolerance for a, e in zip(actual, expected))
+
+
+def test_two_point_geometry_endpoints_and_midpoint():
+    start, end = (37.5407, -77.4360), (39.2904, -76.6122)  # Richmond, Baltimore
+    index = RouteIndex([start, end], total_miles=150)
+
+    assert index.coordinate_at(0) == start
+    assert index.coordinate_at(150) == end
+    assert _close(index.coordinate_at(75), ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2))
+
+
+def test_uneven_segments_interpolate_into_the_right_leg():
+    index = RouteIndex([_north(0), _north(10), _north(40), _north(100)], total_miles=100)
+
+    assert _close(index.coordinate_at(5), _north(5))
+    assert _close(index.coordinate_at(10), _north(10))
+    assert _close(index.coordinate_at(25), _north(25))
+    assert _close(index.coordinate_at(70), _north(70))
+
+
+def test_coordinate_at_clamps_to_the_route():
+    first, last = _north(0), _north(50)
+    index = RouteIndex([first, _north(20), last], total_miles=50)
+
+    assert index.coordinate_at(-10) == first
+    assert index.coordinate_at(50.001) == last
+    assert index.coordinate_at(10_000) == last
+
+
+def test_road_distance_scales_the_polyline():
+    geometry = [_north(0), _north(30), _north(90)]
+    assert sum(route_index._haversine_mi(a, b) for a, b in zip(geometry, geometry[1:])) == pytest.approx(90)
+
+    index = RouteIndex(geometry, total_miles=100)
+
+    assert _close(index.coordinate_at(50), _north(45))
+    assert index.coordinate_at(100) == geometry[-1]
+
+
+def test_nearest_named():
+    index = RouteIndex([_north(0), _north(500)], total_miles=500)
+    steps = [(0.0, "Richmond, VA"), (52.0, "Fredericksburg, VA"), (108.0, "Washington, DC"), (150.0, "Baltimore, MD")]
+
+    assert index.nearest_named(60, steps) == "Fredericksburg, VA"
+    assert index.nearest_named(90, steps) == "Washington, DC"
+    assert index.nearest_named(80, steps) is None  # 28 miles either way, beyond the threshold
+    assert index.nearest_named(-5, steps) == "Richmond, VA"
+    assert index.nearest_named(20, [(10.0, "Ashland, VA"), (30.0, "Doswell, VA")]) == "Ashland, VA"  # tie: earlier
+    assert index.nearest_named(150 + NEAREST_NAMED_MAX_MI, steps) == "Baltimore, MD"
+    assert index.nearest_named(150 + NEAREST_NAMED_MAX_MI + 0.5, steps) is None
+    assert index.nearest_named(60, []) is None
+
+
+@pytest.mark.parametrize(
+    ("geometry", "total_miles"),
+    [
+        ([(37.5, -77.4)], 0),
+        ([(37.5, -77.4)], 12),
+        ([(37.5, -77.4), (37.5, -77.4)], 0),
+        ([(37.5, -77.4), (37.5, -77.4)], 12),
+    ],
+    ids=["single-vertex", "single-vertex-with-length", "identical-pair", "identical-pair-with-length"],
+)
+def test_degenerate_geometry_does_not_divide_by_zero(geometry, total_miles):
+    index = RouteIndex(geometry, total_miles)
+
+    for mile in (-1, 0, 6, 12, 100):
+        assert index.coordinate_at(mile) == geometry[0]
+
+
+def test_duplicate_vertices_inside_a_route_interpolate_cleanly():
+    index = RouteIndex([_north(0), _north(10), _north(10), _north(20)], total_miles=20)
+
+    assert _close(index.coordinate_at(10), _north(10))
+    assert _close(index.coordinate_at(15), _north(15))
+
+
+def test_empty_geometry_is_rejected():
+    with pytest.raises(ValueError):
+        RouteIndex([], total_miles=0)
+
+
+class _CountingList(list):
+    """A list that counts element reads, so a linear scan cannot hide inside bisect or a loop."""
+
+    reads = 0
+
+    def __getitem__(self, item):
+        type(self).reads += 1
+        return super().__getitem__(item)
+
+
+def test_lookups_are_logarithmic_and_distances_are_built_once(monkeypatch):
+    vertices = 10_000
+    geometry = [_north(mile) for mile in range(vertices)]
+    haversine_calls = 0
+    real_haversine = route_index._haversine_mi
+
+    def counting_haversine(a, b):
+        nonlocal haversine_calls
+        haversine_calls += 1
+        return real_haversine(a, b)
+
+    monkeypatch.setattr(route_index, "_haversine_mi", counting_haversine)
+    index = RouteIndex(geometry, total_miles=vertices - 1)
+    assert haversine_calls == vertices - 1
+
+    index._miles = _CountingList(index._miles)
+    _CountingList.reads = 0
+    queries = 1_000
+    for query in range(queries):
+        index.coordinate_at(query * 9.999)
+
+    assert haversine_calls == vertices - 1  # nothing recomputed per query
+    # bisect over 10,000 entries reads about 14 elements, plus a few for interpolation. A linear scan would
+    # read thousands per call; this bound allows 20 per call and fails by orders of magnitude on a scan.
+    assert _CountingList.reads <= queries * 20
+    assert _close(index.coordinate_at(4321.5), _north(4321.5), tolerance=1e-6)
