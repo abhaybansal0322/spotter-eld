@@ -1,0 +1,123 @@
+{
+  "date": "2021-04-09",
+  "date_index": 0,
+  "header": {
+    "from": "Richmond, VA",
+    "to": "Newark, NJ",
+    "total_mileage_today": 426.25,
+    "home_terminal_timezone": "America/New_York",
+    "carrier_name": null,
+    "main_office_address": null,
+    "home_terminal_address": null,
+    "vehicle_numbers": null,
+    "driver_name": null,
+    "co_driver": null,
+    "shipping_document": null
+  },
+  "segments": [
+    {
+      "status": "OFF_DUTY",
+      "start_min": 0,
+      "end_min": 360
+    },
+    {
+      "status": "ON_DUTY_NOT_DRIVING",
+      "start_min": 360,
+      "end_min": 450
+    },
+    {
+      "status": "DRIVING",
+      "start_min": 450,
+      "end_min": 540
+    },
+    {
+      "status": "ON_DUTY_NOT_DRIVING",
+      "start_min": 540,
+      "end_min": 570
+    },
+    {
+      "status": "DRIVING",
+      "start_min": 570,
+      "end_min": 720
+    },
+    {
+      "status": "OFF_DUTY",
+      "start_min": 720,
+      "end_min": 780
+    },
+    {
+      "status": "DRIVING",
+      "start_min": 780,
+      "end_min": 900
+    },
+    {
+      "status": "ON_DUTY_NOT_DRIVING",
+      "start_min": 900,
+      "end_min": 930
+    },
+    {
+      "status": "DRIVING",
+      "start_min": 930,
+      "end_min": 960
+    },
+    {
+      "status": "SLEEPER_BERTH",
+      "start_min": 960,
+      "end_min": 1065
+    },
+    {
+      "status": "DRIVING",
+      "start_min": 1065,
+      "end_min": 1140
+    },
+    {
+      "status": "ON_DUTY_NOT_DRIVING",
+      "start_min": 1140,
+      "end_min": 1260
+    },
+    {
+      "status": "OFF_DUTY",
+      "start_min": 1260,
+      "end_min": 1440
+    }
+  ],
+  "totals": {
+    "OFF_DUTY": 10.0,
+    "SLEEPER_BERTH": 1.75,
+    "DRIVING": 7.75,
+    "ON_DUTY_NOT_DRIVING": 4.5
+  },
+  "total_miles_driving": 426.25,
+  "remarks": [
+    {
+      "at_min": 360,
+      "location": "Richmond, VA"
+    },
+    {
+      "at_min": 540,
+      "location": "Fredericksburg, VA"
+    },
+    {
+      "at_min": 720,
+      "location": "Baltimore, MD"
+    },
+    {
+      "at_min": 900,
+      "location": "Philadelphia, PA"
+    },
+    {
+      "at_min": 960,
+      "location": "Cherry Hill, NJ"
+    },
+    {
+      "at_min": 1140,
+      "location": "Newark, NJ"
+    }
+  ],
+  "recap": {
+    "on_duty_today_hours": 12.25,
+    "a_on_duty_last_7_days_hours": 12.25,
+    "b_available_tomorrow_hours": 57.75,
+    "c_on_duty_last_5_days_hours": 12.25
+  }
+}

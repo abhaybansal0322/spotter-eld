@@ -167,9 +167,10 @@ class DaySerializer(serializers.Serializer):
 
 
 class TripPlanResponseSerializer(serializers.Serializer):
-    """The §12 response. Needs context trip_id and timezone."""
+    """The §25 response. Needs context trip_id and timezone."""
 
     id = serializers.SerializerMethodField()
+    timezone = serializers.SerializerMethodField()
     limits = serializers.DictField(child=serializers.IntegerField())
     summary = SummarySerializer()
     route = RouteSerializer()
@@ -179,6 +180,9 @@ class TripPlanResponseSerializer(serializers.Serializer):
 
     def get_id(self, plan):
         return str(self.context["trip_id"])
+
+    def get_timezone(self, plan):
+        return self.context["timezone"]
 
     def get_violations(self, plan):
         return []  # violation-free by construction; present for parity with ELD output

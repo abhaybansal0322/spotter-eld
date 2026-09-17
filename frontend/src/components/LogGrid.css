@@ -1,0 +1,94 @@
+.log-grid {
+  display: block;
+  width: 100%;
+  height: auto;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #111;
+}
+
+.log-grid__hour-band {
+  fill: #111;
+}
+
+.log-grid__hour-labels text {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.log-grid__row-label,
+.log-grid__remarks-heading {
+  fill: #111;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.log-grid__remarks-heading {
+  font-size: 14px;
+}
+
+.log-grid__outline {
+  fill: none;
+  stroke: #111;
+  stroke-width: 1.5;
+}
+
+.log-grid__rule {
+  stroke: #111;
+  stroke-width: 1.25;
+}
+
+.log-grid__rule--double {
+  stroke-width: 3;
+}
+
+.log-grid__tick line {
+  stroke: #111;
+}
+
+.log-grid__tick--hour line {
+  stroke-width: 1.25;
+}
+
+.log-grid__tick--half line {
+  stroke-width: 1.1;
+}
+
+.log-grid__tick--quarter line {
+  stroke-width: 0.8;
+}
+
+.log-grid__duty-line {
+  fill: none;
+  stroke: #1d4ed8;
+  stroke-linejoin: miter;
+  stroke-linecap: square;
+}
+
+.log-grid__totals text {
+  fill: #1d4ed8;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.log-grid__leader {
+  stroke: #1d4ed8;
+  stroke-width: 0.8;
+}
+
+.log-grid__remarks text:not(.log-grid__remarks-heading) {
+  fill: #1d4ed8;
+  font-size: 11px;
+}
+
+@media print {
+  .log-grid__duty-line,
+  .log-grid__leader {
+    stroke: #000;
+  }
+
+  .log-grid__totals text,
+  .log-grid__remarks text:not(.log-grid__remarks-heading) {
+    fill: #000;
+  }
+}

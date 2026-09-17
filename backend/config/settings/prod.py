@@ -5,7 +5,7 @@ import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F401,F403
-from .base import DATABASE_URL, SECRET_KEY
+from .base import DATABASE_URL, REST_FRAMEWORK, SECRET_KEY
 
 if not SECRET_KEY:
     raise ImproperlyConfigured("SECRET_KEY must be set in production.")
@@ -26,6 +26,10 @@ CORS_ALLOWED_ORIGINS = _csv("CORS_ALLOWED_ORIGINS")
 DATABASES = {
     "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600),
 }
+
+# Render's proxy appends the client address to X-Forwarded-For. Trust exactly one hop, so the anonymous throttle
+# keys on the real client and a client-supplied X-Forwarded-For cannot mint a fresh identity per request.
+REST_FRAMEWORK = {**REST_FRAMEWORK, "NUM_PROXIES": 1}
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},

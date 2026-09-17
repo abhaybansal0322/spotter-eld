@@ -1,42 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Limits, Segment } from '../../types';
+import { LIMITS } from '../../test/fixtures';
+import type { Segment } from '../../types';
+import type { RequiredLimits } from '../limits';
 import {
   buildPolylinePoints,
+  gridFrame,
+  LEADER_H,
+  remarkLeader,
+  rowLayout,
+  tickLines,
+  totalHours,
   GRID_H,
   GRID_W,
   GRID_X,
   GRID_Y,
   minutesToX,
-  REMARKS_H,
   remarkAnchor,
   ROW_H,
   statusToY,
   tickMarks,
+  type TickMark,
 } from '../logGrid';
-
-// The limits object exactly as the API returns it (spec §25).
-const LIMITS: Limits = {
-  avg_speed_mph: 55,
-  drive_limit_min: 660,
-  window_limit_min: 840,
-  qualifying_rest_min: 600,
-  break_after_drive_min: 480,
-  break_qualify_min: 30,
-  cycle_limit_min: 4200,
-  cycle_days: 8,
-  restart_min: 2040,
-  fuel_interval_mi: 1000,
-  fuel_duration_min: 30,
-  pickup_duration_min: 60,
-  dropoff_duration_min: 60,
-  break_duration_min: 30,
-  grid_resolution_min: 15,
-  minutes_per_day: 1440,
-  minutes_per_hour: 60,
-  recap_a_days: 7,
-  recap_c_days: 5,
-};
 
 function parsePoints(points: string): [number, number][] {
   return points.split(' ').map((pair) => {
@@ -118,20 +103,54 @@ describe('buildPolylinePoints', () => {
 });
 
 describe('tickMarks', () => {
-  it('gives a labelled major tick every hour and a minor tick at every other 15-minute mark', () => {
+  it('gives 97 ticks at three printed heights, never two at one x', () => {
     const ticks = tickMarks(LIMITS);
-    const majors = ticks.filter((tick) => tick.major);
-    const minors = ticks.filter((tick) => !tick.major);
+    const sizes = (size: string) => ticks.filter((tick) => tick.size === size);
 
     expect(ticks).toHaveLength(97); // every 15-minute boundary from 0 to 1440 inclusive
-    expect(majors).toHaveLength(25);
-    expect(minors).toHaveLength(72); // three per hour; the fourth quarter mark of each hour is the major tick
-    expect(majors.map((tick) => tick.label)).toEqual([
+    expect(sizes('hour')).toHaveLength(25);
+    expect(sizes('half')).toHaveLength(24);
+    expect(sizes('quarter')).toHaveLength(48);
+    expect(new Set(ticks.map((tick) => tick.x)).size).toBe(ticks.length);
+    expect(sizes('hour').map((tick) => tick.label)).toEqual([
       'Midnight', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
       'Noon', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', 'Midnight',
     ]);
-    expect(minors.every((tick) => tick.label === undefined)).toBe(true);
-    expect(new Set(ticks.map((tick) => tick.x)).size).toBe(ticks.length);
+    expect(ticks.filter((tick) => tick.size !== 'hour').every((tick) => tick.label === undefined)).toBe(true);
+    expect(ticks.slice(0, 5).map((tick) => tick.size)).toEqual(['hour', 'quarter', 'half', 'quarter', 'hour']);
+  });
+
+  it('draws an hour as one full-height rule and half and quarter ticks in every row, hanging as printed', () => {
+    const [hour, quarter, half] = tickMarks(LIMITS) as [TickMark, TickMark, TickMark];
+    const frame = gridFrame();
+
+    expect(tickLines(hour)).toEqual([{ x1: GRID_X, y1: GRID_Y, x2: GRID_X, y2: GRID_Y + GRID_H }]);
+
+    const halfLines = tickLines(half);
+    const quarterLines = tickLines(quarter);
+    expect(halfLines).toHaveLength(4);
+    const length = (line: { y1: number; y2: number }) => line.y2 - line.y1;
+    expect(halfLines.every((line, row) => length(line) > length(quarterLines[row] as typeof line))).toBe(true);
+    expect(halfLines.every((line) => length(line) < ROW_H)).toBe(true);
+    // Rows 1 and 2 hang from their top edge; rows 3 and 4 rise from their bottom edge.
+    expect(halfLines.map((line) => line.y1)).toEqual([GRID_Y, GRID_Y + ROW_H, expect.any(Number), expect.any(Number)]);
+    expect(halfLines.slice(2).map((line) => line.y2)).toEqual([GRID_Y + 3 * ROW_H, GRID_Y + 4 * ROW_H]);
+    expect(frame.grid).toEqual({ x: GRID_X, y: GRID_Y, width: GRID_W, height: GRID_H });
+  });
+});
+
+describe('rowLayout and totals', () => {
+  it('numbers the row labels as printed and wraps the two long ones', () => {
+    expect(rowLayout().map((row) => row.labelLines.map((line) => line.text))).toEqual([
+      ['1. Off Duty'],
+      ['2. Sleeper', 'Berth'],
+      ['3. Driving'],
+      ['4. On Duty', '(not driving)'],
+    ]);
+  });
+
+  it('adds the four daily totals', () => {
+    expect(totalHours({ OFF_DUTY: 10, SLEEPER_BERTH: 1.75, DRIVING: 7.75, ON_DUTY_NOT_DRIVING: 4.5 })).toBe(24);
   });
 });
 
@@ -140,28 +159,29 @@ describe('remarkAnchor', () => {
     const anchor = remarkAnchor(540, LIMITS);
 
     expect(anchor.x).toBe(GRID_X + 360);
-    expect(anchor.y).toBe(GRID_Y + GRID_H + REMARKS_H);
+    expect(anchor.y).toBe(GRID_Y + GRID_H + LEADER_H);
     expect(anchor.transform).toBe(`rotate(-90 ${anchor.x} ${anchor.y})`);
+    expect(remarkLeader(540, LIMITS)).toEqual({ x1: anchor.x, y1: GRID_Y + GRID_H, x2: anchor.x, y2: anchor.y });
   });
 });
 
 describe('limits drive the grid', () => {
   it('follows a different minutes_per_day instead of a hardcoded 1440', () => {
-    const halfDay: Limits = { ...LIMITS, minutes_per_day: 720 };
+    const halfDay: RequiredLimits = { ...LIMITS, minutes_per_day: 720 };
 
     expect(minutesToX(720, halfDay)).toBe(GRID_X + GRID_W);
     expect(minutesToX(720, halfDay)).not.toBe(minutesToX(720, LIMITS));
-    expect(tickMarks(halfDay).filter((tick) => tick.major)).toHaveLength(13);
+    expect(tickMarks(halfDay).filter((tick) => tick.size === 'hour')).toHaveLength(13);
     expect(remarkAnchor(360, halfDay).x).toBe(GRID_X + GRID_W / 2);
     expect(buildPolylinePoints([{ status: 'DRIVING', start_min: 0, end_min: 720 }], halfDay)).toBe(
       `${GRID_X},${statusToY('DRIVING')} ${GRID_X + GRID_W},${statusToY('DRIVING')}`,
     );
   });
 
-  it('follows grid_resolution_min and refuses a missing limit', () => {
-    expect(tickMarks({ ...LIMITS, grid_resolution_min: 30 })).toHaveLength(49);
+  it('follows grid_resolution_min', () => {
+    const halfHourGrid: RequiredLimits = { ...LIMITS, grid_resolution_min: 30 };
 
-    const { minutes_per_day: _omitted, ...incomplete } = LIMITS;
-    expect(() => minutesToX(0, incomplete)).toThrow('limits.minutes_per_day');
+    expect(tickMarks(halfHourGrid)).toHaveLength(49);
+    expect(tickMarks(halfHourGrid).filter((tick) => tick.size === 'quarter')).toHaveLength(0);
   });
 });

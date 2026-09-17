@@ -108,6 +108,8 @@ export interface DaySheet {
 
 export interface TripPlan {
   id: string;
+  /** IANA zone of the home terminal, e.g. "America/Chicago". Every time in the plan is in this zone. */
+  timezone: string;
   limits: Limits;
   summary: TripSummary;
   route: Route;

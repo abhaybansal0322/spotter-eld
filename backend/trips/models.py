@@ -69,6 +69,7 @@ class Trip(models.Model):
         """The API payload as it was returned when the trip was planned. Use with TripQuerySet.with_children."""
         return {
             "id": str(self.id),
+            "timezone": self.timezone,
             "limits": self.limits,
             "summary": self.summary,
             "route": {"geometry": self.route_geometry, "bbox": self.route_bbox},

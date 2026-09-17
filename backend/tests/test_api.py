@@ -49,8 +49,9 @@ def test_valid_request_returns_201_and_full_contract(api_client, fake_ors):
 
     assert response.status_code == 201
     body = response.json()
-    assert list(body) == ["id", "limits", "summary", "route", "stops", "days", "violations"]
+    assert list(body) == ["id", "timezone", "limits", "summary", "route", "stops", "days", "violations"]
     uuid.UUID(body["id"])
+    assert body["timezone"] == "America/New_York"
     assert set(body["summary"]) == {"total_miles", "driving_hours", "elapsed_hours", "days", "cycle_used_at_end", "restart_required"}
     assert set(body["route"]) == {"geometry", "bbox"}
     assert all(len(point) == 2 for point in body["route"]["geometry"])
@@ -139,6 +140,7 @@ def test_optional_start_time_and_timezone_default(api_client, fake_ors):
     response = api_client.post(PLAN_URL, payload, format="json")
 
     assert response.status_code == 201
+    assert response.json()["timezone"] == "America/New_York"
     arrive = response.json()["stops"][0]["arrive"]
     assert arrive[-6:] in ("-04:00", "-05:00")  # New York
     assert int(arrive[14:16]) % 15 == 0 and arrive[17:19] == "00"
@@ -313,3 +315,35 @@ def test_violations_present_and_empty(api_client, fake_ors):
     fake_ors(straight_trip(50, 700))
 
     assert _post(api_client).json()["violations"] == []
+
+
+@pytest.mark.django_db
+def test_timezone_is_top_level_and_survives_storage(api_client, fake_ors):
+    fake_ors(straight_trip(50, 700))
+
+    created = _post(api_client, timezone="America/Chicago", start_time="2026-09-16T06:00:00-05:00").json()
+    stored = api_client.get(f"/api/trips/{created['id']}/").json()
+
+    assert created["timezone"] == stored["timezone"] == "America/Chicago"
+    assert created["stops"][0]["arrive"].endswith("-05:00")
+
+
+def test_prod_trusts_exactly_one_proxy_hop():
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    # Settings read the environment at import, so load prod in a fresh interpreter rather than this configured one.
+    env = {**os.environ, "SECRET_KEY": "x" * 50, "DATABASE_URL": "sqlite://:memory:"}
+    env.pop("DJANGO_SETTINGS_MODULE", None)
+    script = "import json, config.settings.prod as prod; print(json.dumps(prod.REST_FRAMEWORK))"
+    result = subprocess.run(
+        [sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[1], env=env,
+        capture_output=True, text=True, check=True,
+    )
+
+    rest_framework = json.loads(result.stdout)
+    assert rest_framework["NUM_PROXIES"] == 1
+    assert rest_framework["EXCEPTION_HANDLER"] == "trips.exceptions.api_exception_handler"

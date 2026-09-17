@@ -36,3 +36,14 @@ export function durationLabel(hours: number): string {
   }
   return minutes === 0 ? `${wholeHours} h` : `${wholeHours} h ${minutes} min`;
 }
+
+/** Hours as the paper form writes them: 10 -> "10", 1.75 -> "1.75", 4.5 -> "4.5". Two decimals at most. */
+export function hoursFigure(hours: number): string {
+  return String(Number(hours.toFixed(2)));
+}
+
+/** "2021-04-09" -> { month: "04", day: "09", year: "2021" }. Split as text, so no time zone can shift the day. */
+export function dateParts(isoDate: string): { month: string; day: string; year: string } {
+  const [year = '', month = '', day = ''] = isoDate.split('-');
+  return { month, day, year };
+}
