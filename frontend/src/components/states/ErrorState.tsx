@@ -4,6 +4,7 @@ export interface ErrorStateProps {
   message: string;
   fieldErrors?: Record<string, string[]>;
   onRetry?: () => void;
+  title?: string;
 }
 
 function fieldName(field: string): string {
@@ -12,13 +13,13 @@ function fieldName(field: string): string {
 }
 
 /** A readable failure with any per-field problems listed, and a way to try again. */
-export function ErrorState({ message, fieldErrors, onRetry }: ErrorStateProps) {
+export function ErrorState({ message, fieldErrors, onRetry, title = 'We couldn\u2019t plan this trip' }: ErrorStateProps) {
   const fields = Object.entries(fieldErrors ?? {});
 
   return (
     <div className="state state--error" role="alert">
       <div>
-        <p className="state__title">We couldn&rsquo;t plan this trip</p>
+        <p className="state__title">{title}</p>
         <p className="state__detail">{message}</p>
         {fields.length > 0 && (
           <ul className="state__fields">

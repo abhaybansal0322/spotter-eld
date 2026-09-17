@@ -231,6 +231,16 @@ def test_ors_server_error_returns_502(api_client, fake_ors):
 
 
 @pytest.mark.django_db
+def test_exhausted_ors_quota_says_so_rather_than_unavailable(api_client, fake_ors):
+    fake_ors(http.UpstreamError("GET search returned HTTP 403", status=403, body={"error": "Quota exceeded"}))
+
+    response = _post(api_client)
+
+    assert response.status_code == 502
+    assert "usage limit" in response.json()["detail"]
+
+
+@pytest.mark.django_db
 def test_input_error_from_the_service_returns_400(api_client, monkeypatch):
     def reject(**kwargs):
         raise InputError("start_time must fall on a 15-minute boundary")
@@ -306,12 +316,34 @@ def test_trip_persists_and_detail_returns_the_same_payload(api_client, fake_ors,
     assert response.json() == created
 
 
+@pytest.mark.parametrize(
+    ("restart_required", "end", "added"), [(False, 41.0, 31.0), (True, 21.0, 21.0)], ids=["no-restart", "restart"],
+)
+@pytest.mark.django_db
+def test_trip_stored_before_the_cycle_fields_existed_reads_back_with_estimates(
+    api_client, fake_ors, restart_required, end, added,
+):
+    fake_ors(straight_trip(50, 700))
+    created = _post(api_client).json()  # current_cycle_used is 10
+    trip = Trip.objects.get(pk=created["id"])
+    legacy = {key: value for key, value in trip.summary.items() if key not in ("cycle_used_at_start_hours", "on_duty_added_hours")}
+    trip.summary = {**legacy, "cycle_used_at_end": end, "restart_required": restart_required}
+    trip.save()
+
+    response = api_client.get(f"/api/trips/{created['id']}/")
+
+    assert response.status_code == 200
+    summary = response.json()["summary"]
+    assert summary["cycle_used_at_start_hours"] == 10
+    assert summary["on_duty_added_hours"] == added
+
+
 @pytest.mark.django_db
 def test_unknown_trip_id_returns_404(api_client):
     response = api_client.get(f"/api/trips/{uuid.uuid4()}/")
 
     assert response.status_code == 404
-    assert "detail" in response.json()
+    assert response.json() == {"detail": "No saved trip has this link. It may have been mistyped."}
 
 
 @pytest.mark.django_db

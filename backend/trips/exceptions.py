@@ -8,6 +8,9 @@ from rest_framework.views import exception_handler
 from .services.errors import InputError, NotFoundError, UpstreamError
 
 UPSTREAM_UNAVAILABLE = "The routing service is unavailable right now. Please try again in a minute."
+UPSTREAM_QUOTA_EXCEEDED = "The routing service's usage limit for this app has been reached. Please try again later."
+# ORS answers an exhausted daily quota with 403 {"error": "Quota exceeded"} and its per-minute limit with 429.
+UPSTREAM_QUOTA_STATUSES = frozenset({403, 429})
 
 
 def api_exception_handler(exc, context):
@@ -20,7 +23,8 @@ def api_exception_handler(exc, context):
     if isinstance(exc, NotFoundError):
         return Response({"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
     if isinstance(exc, UpstreamError):
-        return Response({"detail": UPSTREAM_UNAVAILABLE}, status=status.HTTP_502_BAD_GATEWAY)
+        detail = UPSTREAM_QUOTA_EXCEEDED if exc.status in UPSTREAM_QUOTA_STATUSES else UPSTREAM_UNAVAILABLE
+        return Response({"detail": detail}, status=status.HTTP_502_BAD_GATEWAY)
     if isinstance(exc, InputError):
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

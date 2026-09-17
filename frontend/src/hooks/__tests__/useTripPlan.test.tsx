@@ -5,9 +5,10 @@ import { API_LIMITS, LIMITS } from '../../test/fixtures';
 import type { TripPlan, TripPlanRequest } from '../../types';
 import { useTripPlan } from '../useTripPlan';
 
-vi.mock('../../api/client', () => ({ planTrip: vi.fn() }));
-const { planTrip } = await import('../../api/client');
+vi.mock('../../api/client', () => ({ planTrip: vi.fn(), getTrip: vi.fn() }));
+const { getTrip, planTrip } = await import('../../api/client');
 const planTripMock = vi.mocked(planTrip);
+const getTripMock = vi.mocked(getTrip);
 
 const REQUEST: TripPlanRequest = {
   current_location: 'Richmond, VA',
@@ -33,6 +34,7 @@ function deferred() {
 
 beforeEach(() => {
   planTripMock.mockReset();
+  getTripMock.mockReset();
 });
 
 afterEach(() => {
@@ -48,6 +50,26 @@ describe('useTripPlan', () => {
     await act(() => result.current.plan(REQUEST));
 
     expect(result.current.state).toEqual({ status: 'success', data: plan('only'), limits: LIMITS });
+  });
+
+  it('opens a stored plan by id through the same loading and success states', async () => {
+    const pending = deferred();
+    getTripMock.mockReturnValueOnce(pending.promise);
+    const { result } = renderHook(() => useTripPlan());
+
+    let done!: Promise<void>;
+    act(() => {
+      done = result.current.open('3f2b8c1e');
+    });
+    expect(result.current.state).toEqual({ status: 'loading' });
+    expect(getTripMock.mock.calls[0]?.[0]).toBe('3f2b8c1e');
+
+    await act(async () => {
+      pending.resolve(plan('3f2b8c1e'));
+      await done;
+    });
+    expect(result.current.state).toEqual({ status: 'success', data: plan('3f2b8c1e'), limits: LIMITS });
+    expect(planTripMock).not.toHaveBeenCalled();
   });
 
   it('never lets a superseded request overwrite newer state', async () => {

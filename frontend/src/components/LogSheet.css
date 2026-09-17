@@ -269,7 +269,19 @@
 }
 
 .log-sheet__cycle--unused {
+  position: relative;
+}
+
+/* Only the printed boxes fade, so the note saying why they are blank stays fully legible. */
+.log-sheet__cycle--unused > :not(.log-sheet__cycle-note) {
   opacity: 0.6;
+}
+
+.log-sheet__cycle-note {
+  grid-column: 2 / -1;
+  margin: 0;
+  font-style: italic;
+  font-size: 11px;
 }
 
 .log-sheet__restart-note {

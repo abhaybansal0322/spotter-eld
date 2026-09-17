@@ -71,12 +71,23 @@ class Trip(models.Model):
             "id": str(self.id),
             "timezone": self.timezone,
             "limits": self.limits,
-            "summary": self.summary,
+            "summary": self._summary_with_defaults(),
             "route": {"geometry": self.route_geometry, "bbox": self.route_bbox},
             "stops": [stop.payload for stop in self.stops.all()],
             "days": [day.payload for day in self.days.all()],
             "violations": [],
         }
+
+
+    def _summary_with_defaults(self):
+        """Rows written before the summary carried the cycle start and added hours read back with estimates rather than
+        raising: the submitted hours stand in for the engine's seed, and the trip added what the end figure gained.
+        A restart zeroed the cycle, so then everything at the end was added. Estimates, not the exact figures."""
+        summary = dict(self.summary)
+        start = summary.setdefault("cycle_used_at_start_hours", self.current_cycle_used)
+        end = summary["cycle_used_at_end"]
+        summary.setdefault("on_duty_added_hours", end if summary["restart_required"] else max(0.0, end - start))
+        return summary
 
 
 class Stop(models.Model):

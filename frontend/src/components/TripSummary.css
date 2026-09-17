@@ -1,5 +1,6 @@
 .trip-summary {
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
 }
 
@@ -28,6 +29,38 @@
 .trip-summary__new {
   align-self: center;
   margin: 0 var(--space-3);
+}
+
+/* The shareable link: one quiet line under the figures. */
+.trip-summary__share {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  border-top: 1px solid var(--rule);
+}
+
+.trip-summary__url {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+}
+
+.trip-summary__copy {
+  flex: none;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
 }
 
 @media (max-width: 560px) {

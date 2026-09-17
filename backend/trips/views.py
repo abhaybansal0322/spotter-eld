@@ -4,8 +4,8 @@ Service errors are mapped to HTTP statuses by trips.exceptions.api_exception_han
 """
 import uuid
 
-from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
@@ -51,5 +51,7 @@ class PlanTripView(APIView):
 
 class TripDetailView(APIView):
     def get(self, request, trip_id):
-        trip = get_object_or_404(Trip.objects.with_children(), pk=trip_id)
+        trip = Trip.objects.with_children().filter(pk=trip_id).first()
+        if trip is None:
+            raise NotFound("No saved trip has this link. It may have been mistyped.")
         return Response(trip.to_payload())

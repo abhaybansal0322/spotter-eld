@@ -119,6 +119,10 @@ export function LogSheet({ day, timezone, limits }: LogSheetProps) {
           <RecapBox letter="A." field="60-a" value={null} caption="A. Total hours on duty last 8 days including today." />
           <RecapBox letter="B." field="60-b" value={null} caption="B. Total hours available tomorrow 60 hr. minus A*" />
           <RecapBox letter="C." field="60-c" value={null} caption="C. Total hours on duty last 7 days including today." />
+          <p className="log-sheet__cycle-note" data-cycle-note>
+            Not used: this log follows the {hoursFigure(limits.cycle_limit_min / limits.minutes_per_hour)} hour /{' '}
+            {limits.cycle_days} day cycle.
+          </p>
         </div>
 
         <p className="log-sheet__restart-note">

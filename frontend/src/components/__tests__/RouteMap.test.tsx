@@ -92,4 +92,22 @@ describe('RouteMap', () => {
     rerender(mapElement(3, 2)); // a hover elsewhere does not move the map
     expect(mockMap.flyTo).toHaveBeenCalledTimes(1);
   });
+
+  it('fans out stops that share a spot so each pin can still be clicked', () => {
+    const [start, pickup, ...rest] = TRIP_PLAN.stops;
+    const stops = [start!, { ...pickup!, lat: start!.lat, lng: start!.lng }, ...rest]; // already at the shipper
+    const onSelectStop = vi.fn();
+    render(
+      <RouteMap route={TRIP_PLAN.route} stops={stops} timezone={TRIP_PLAN.timezone} highlightedIndex={null}
+        selectedIndex={null} onSelectStop={onSelectStop} onHoverStop={vi.fn()} />,
+    );
+
+    const markers = screen.getAllByTestId('marker');
+    const anchors = markers.map((marker) => marker.getAttribute('data-anchor'));
+    expect(anchors[0]).not.toBe(anchors[1]);
+    expect(anchors.slice(2).every((anchor) => anchor === '14,35')).toBe(true); // stops far apart keep the true anchor
+    fireEvent.click(markers[0] as HTMLElement);
+    fireEvent.click(markers[1] as HTMLElement);
+    expect(onSelectStop.mock.calls).toEqual([[0], [1]]);
+  });
 });

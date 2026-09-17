@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { useLimits } from '../hooks/useLimits';
 import { useTripPlan } from '../hooks/useTripPlan';
+import { tripIdFromPath, tripPath, useTripUrl } from '../hooks/useTripUrl';
 import { hoursFigure } from '../lib/format';
 import type { TripPlanRequest } from '../types';
 import { CycleMeter } from './CycleMeter';
@@ -17,7 +18,8 @@ import { ResultsSkeleton } from './states/ResultsSkeleton';
 
 /** Layout and the trip plan state switch. Everything else lives in the components it renders. */
 export function PlanPage() {
-  const { state, plan, reset } = useTripPlan();
+  const { state, plan, open, reset } = useTripPlan();
+  const leaveTrip = useTripUrl(state, open, reset);
   // A plan carries its own limits, so a successful plan fills in for a limits fetch that failed.
   const limits = useLimits() ?? (state.status === 'success' ? state.limits : null);
   const [lastRequest, setLastRequest] = useState<TripPlanRequest | null>(null);
@@ -25,13 +27,27 @@ export function PlanPage() {
   const [timelineHover, setTimelineHover] = useState<number | null>(null);
   const [mapHover, setMapHover] = useState<number | null>(null);
 
-  const submit = (request: TripPlanRequest) => {
-    setLastRequest(request);
+  const clearSelection = () => {
     setSelectedStop(null);
     setTimelineHover(null);
     setMapHover(null);
+  };
+
+  const submit = (request: TripPlanRequest) => {
+    setLastRequest(request);
+    clearSelection();
+    leaveTrip();
     void plan(request);
   };
+
+  const newTrip = () => {
+    leaveTrip();
+    reset();
+  };
+
+  // A new plan leaves /trip/:id before it starts, so an id in the address means a stored plan is being opened.
+  const openingId = tripIdFromPath(window.location.pathname);
+  const retry = openingId ? () => void open(openingId) : lastRequest ? () => submit(lastRequest) : undefined;
 
   const cycleHours = limits ? hoursFigure(limits.cycle_limit_min / limits.minutes_per_hour) : null;
 
@@ -55,18 +71,27 @@ export function PlanPage() {
         </aside>
 
         <div className="plan-page__content" aria-live="polite">
-          {state.status === 'idle' && <EmptyState limits={limits} />}
+          {state.status === 'idle' && (
+            <>
+              <EmptyState limits={limits} />
+              <ResultsSkeleton animated={false} />
+            </>
+          )}
 
           {state.status === 'loading' && (
             <>
-              <LoadingState />
+              <LoadingState title={openingId ? 'Opening saved trip' : 'Planning your trip'} />
               <ResultsSkeleton animated />
             </>
           )}
 
           {state.status === 'error' && (
             <>
-              <ErrorState message={state.message} onRetry={lastRequest ? () => submit(lastRequest) : undefined} />
+              <ErrorState
+                title={openingId ? 'We couldn\u2019t open this trip' : undefined}
+                message={state.message}
+                onRetry={retry}
+              />
               <ResultsSkeleton animated={false} />
             </>
           )}
@@ -75,7 +100,11 @@ export function PlanPage() {
             <>
               <div className="plan-page__overview" data-print="hide">
                 <div className="plan-page__column">
-                  <TripSummary summary={state.data.summary} onNewTrip={reset} />
+                  <TripSummary
+                    summary={state.data.summary}
+                    onNewTrip={newTrip}
+                    shareUrl={`${window.location.origin}${tripPath(state.data.id)}`}
+                  />
                   <CycleMeter limits={state.limits} summary={state.data.summary} stops={state.data.stops} timezone={state.data.timezone} />
                   <StopTimeline
                     stops={state.data.stops}

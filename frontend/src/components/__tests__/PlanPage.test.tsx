@@ -12,11 +12,12 @@ vi.mock('react-leaflet', async () => (await import('./leafletMock')).reactLeafle
 const hook = vi.hoisted(() => ({
   state: { status: 'idle' } as TripPlanState,
   plan: vi.fn(),
+  open: vi.fn(),
   reset: vi.fn(),
 }));
 
 vi.mock('../../hooks/useTripPlan', () => ({
-  useTripPlan: () => ({ state: hook.state, plan: hook.plan, reset: hook.reset }),
+  useTripPlan: () => ({ state: hook.state, plan: hook.plan, open: hook.open, reset: hook.reset }),
 }));
 
 const fetched = vi.hoisted(() => ({ limits: null as RequiredLimits | null }));
@@ -30,6 +31,8 @@ beforeEach(() => {
   fetched.limits = LIMITS;
   mockMap.flyTo.mockClear();
   hook.plan.mockReset();
+  hook.open.mockReset();
+  window.history.replaceState(null, '', '/');
   hook.reset.mockReset();
 });
 
@@ -153,5 +156,62 @@ describe('PlanPage', () => {
     fireEvent.click(screen.getAllByTestId('marker')[4] as HTMLElement);
     expect(mockMap.flyTo).toHaveBeenLastCalledWith(at(4), expect.any(Number));
     expect(screen.getAllByRole('row')[5]?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('shows the results skeleton behind the empty-state copy when idle', () => {
+    const { container } = render(<PlanPage />);
+
+    expect(screen.getByText('Plan a trip and get its logs')).toBeTruthy();
+    expect(skeletonBlocks(container)).toEqual(['summary', 'cycle', 'timeline', 'map', 'sheet']);
+    expect(container.querySelector('.skeleton')?.classList.contains('skeleton--animated')).toBe(false);
+  });
+
+  it('opens the trip named in a /trip/:id address, with its own loading and error copy and retry', () => {
+    window.history.replaceState(null, '', '/trip/3f2b8c1e');
+    hook.state = { status: 'loading' };
+    const { rerender } = render(<PlanPage />);
+
+    expect(hook.open).toHaveBeenCalledWith('3f2b8c1e');
+    expect(screen.getByRole('status').textContent).toContain('Opening saved trip');
+
+    hook.state = { status: 'error', message: 'Not found.' };
+    rerender(<PlanPage />);
+    expect(screen.getByRole('alert').textContent).toContain('We couldn\u2019t open this trip');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(hook.open).toHaveBeenLastCalledWith('3f2b8c1e');
+    expect(hook.plan).not.toHaveBeenCalled();
+  });
+
+  it('gives a loaded plan a shareable address with a copy button, and New trip returns to /', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    hook.state = { status: 'success', data: TRIP_PLAN, limits: LIMITS };
+    render(<PlanPage />);
+
+    const url = `${window.location.origin}/trip/${TRIP_PLAN.id}`;
+    expect(window.location.pathname).toBe(`/trip/${TRIP_PLAN.id}`);
+    expect((screen.getByLabelText('Trip link') as HTMLInputElement).value).toBe(url);
+    expect(hook.open).not.toHaveBeenCalled(); // the address was pushed after loading, not followed
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith(url);
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'New trip' }));
+    expect(window.location.pathname).toBe('/');
+    expect(hook.reset).toHaveBeenCalled();
+    Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  it('follows back and forward between a trip address and the planner', () => {
+    render(<PlanPage />);
+
+    window.history.pushState(null, '', '/trip/abc');
+    fireEvent.popState(window);
+    expect(hook.open).toHaveBeenCalledWith('abc');
+
+    window.history.pushState(null, '', '/');
+    fireEvent.popState(window);
+    expect(hook.reset).toHaveBeenCalled();
   });
 });

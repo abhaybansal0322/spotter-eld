@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { planTrip, type ApiError } from '../api/client';
+import { getTrip, planTrip, type ApiError } from '../api/client';
 import { parseLimits, type RequiredLimits } from '../lib/limits';
 import type { TripPlan, TripPlanRequest } from '../types';
 
@@ -13,11 +13,13 @@ export type TripPlanState =
 export interface UseTripPlan {
   state: TripPlanState;
   plan: (request: TripPlanRequest) => Promise<void>;
+  /** Load a stored plan by id into the same states a new plan goes through. */
+  open: (id: string) => Promise<void>;
   reset: () => void;
 }
 
 /**
- * Owns the trip plan request lifecycle. Starting a new plan aborts the one in flight, and a response that
+ * Owns the trip plan request lifecycle, for a new plan or a stored one opened by id. Starting a new plan aborts the one in flight, and a response that
  * arrives after its request was superseded, reset or unmounted is ignored rather than overwriting newer state.
  * A successful response is narrowed with parseLimits, so a plan missing a limit fails here, not as a blank grid.
  */
@@ -25,14 +27,14 @@ export function useTripPlan(): UseTripPlan {
   const [state, setState] = useState<TripPlanState>({ status: 'idle' });
   const inFlight = useRef<AbortController | null>(null);
 
-  const plan = useCallback(async (request: TripPlanRequest) => {
+  const run = useCallback(async (fetchPlan: (signal: AbortSignal) => Promise<TripPlan>) => {
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
     setState({ status: 'loading' });
 
     try {
-      const data = await planTrip(request, controller.signal);
+      const data = await fetchPlan(controller.signal);
       const limits = parseLimits(data.limits);
       if (!controller.signal.aborted) {
         setState({ status: 'success', data, limits });
@@ -51,6 +53,9 @@ export function useTripPlan(): UseTripPlan {
     }
   }, []);
 
+  const plan = useCallback((request: TripPlanRequest) => run((signal) => planTrip(request, signal)), [run]);
+  const open = useCallback((id: string) => run((signal) => getTrip(id, signal)), [run]);
+
   const reset = useCallback(() => {
     inFlight.current?.abort();
     inFlight.current = null;
@@ -59,5 +64,5 @@ export function useTripPlan(): UseTripPlan {
 
   useEffect(() => () => inFlight.current?.abort(), []);
 
-  return { state, plan, reset };
+  return { state, plan, open, reset };
 }

@@ -1,10 +1,10 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from 'react-leaflet';
 
 import { durationLabel, mileMarker, terminalTime, zoneAbbreviation } from '../lib/format';
-import { KIND_GLYPH, KIND_LABEL, KIND_STATUS, kindsPresent } from '../lib/stops';
+import { KIND_GLYPH, KIND_LABEL, KIND_STATUS, kindsPresent, spreadOverlapping, type PixelOffset } from '../lib/stops';
 import type { LatLng, Route, Stop, StopKind } from '../types';
 import './RouteMap.css';
 
@@ -23,13 +23,20 @@ export interface RouteMapProps {
 const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 const FIT_PADDING: [number, number] = [28, 28];
+const PIN_WIDTH_PX = 28;
+const PIN_HEIGHT_PX = 36;
+const PIN_TIP_Y_PX = 35;
+const PIN_OVERLAP_PX = 22; // pins closer than this on screen cover each other's glyph
+const PIN_SPREAD_PX = 18;
+const NO_OFFSET: PixelOffset = { dx: 0, dy: 0 };
 const SELECTED_STOP_ZOOM = 9; // about a county across: close enough to see the stop's roads, far enough to keep the route
 
 // Built as divIcons with inline SVG: Leaflet's default marker images resolve to broken URLs under Vite.
 const iconCache = new Map<string, L.DivIcon>();
 
-export function stopIcon(kind: StopKind, highlighted: boolean): L.DivIcon {
-  const key = `${kind}:${highlighted}`;
+/** offset moves the drawn pin off the stop's true position, so pins sharing a spot fan out and stay clickable. */
+export function stopIcon(kind: StopKind, highlighted: boolean, offset: PixelOffset = NO_OFFSET): L.DivIcon {
+  const key = `${kind}:${highlighted}:${offset.dx}:${offset.dy}`;
   const cached = iconCache.get(key);
   if (cached) {
     return cached;
@@ -42,9 +49,9 @@ export function stopIcon(kind: StopKind, highlighted: boolean): L.DivIcon {
       '<path class="stop-marker__pin" d="M14 35C14 35 26 21.6 26 13A12 12 0 0 0 2 13c0 8.6 12 22 12 22Z"/>' +
       `<text class="stop-marker__glyph" x="14" y="17.5" text-anchor="middle">${KIND_GLYPH[kind]}</text>` +
       '</svg>',
-    iconSize: [28, 36],
-    iconAnchor: [14, 35],
-    popupAnchor: [0, -30],
+    iconSize: [PIN_WIDTH_PX, PIN_HEIGHT_PX],
+    iconAnchor: [PIN_WIDTH_PX / 2 - offset.dx, PIN_TIP_Y_PX - offset.dy],
+    popupAnchor: [offset.dx, offset.dy - 30],
   });
   iconCache.set(key, icon);
   return icon;
@@ -80,26 +87,59 @@ export function RouteMap({ route, stops, timezone, highlightedIndex, selectedInd
         <FitToRoute bbox={route.bbox} />
         <FlyToStop stop={selectedIndex === null ? undefined : stops[selectedIndex]} />
         <Polyline positions={route.geometry} pathOptions={{ className: 'route-map__line' }} />
-        {stops.map((stop, index) => (
-          <Marker
-            key={`${stop.kind}-${stop.arrive}`}
-            position={[stop.lat, stop.lng]}
-            icon={stopIcon(stop.kind, index === highlightedIndex)}
-            title={`${KIND_LABEL[stop.kind]}: ${stop.label}`}
-            zIndexOffset={index === highlightedIndex ? 1000 : 0}
-            eventHandlers={{
-              click: () => onSelectStop(index),
-              mouseover: () => onHoverStop(index),
-              mouseout: () => onHoverStop(null),
-            }}
-          >
-            <Popup>
-              <StopPopup stop={stop} timezone={timezone} />
-            </Popup>
-          </Marker>
-        ))}
+        <StopMarkers
+          stops={stops}
+          timezone={timezone}
+          highlightedIndex={highlightedIndex}
+          onSelectStop={onSelectStop}
+          onHoverStop={onHoverStop}
+        />
       </MapContainer>
     </section>
+  );
+}
+
+type StopMarkersProps = Pick<RouteMapProps, 'stops' | 'timezone' | 'highlightedIndex' | 'onSelectStop' | 'onHoverStop'>;
+
+function StopMarkers({ stops, timezone, highlightedIndex, onSelectStop, onHoverStop }: StopMarkersProps) {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
+
+  useEffect(() => {
+    const update = () => setZoom(map.getZoom());
+    map.on('zoomend', update);
+    return () => {
+      map.off('zoomend', update);
+    };
+  }, [map]);
+
+  // Overlap is a screen distance, so it is measured in pixels at the current zoom and recomputed when it changes.
+  const offsets = useMemo(
+    () => spreadOverlapping(stops.map((stop) => map.project([stop.lat, stop.lng], zoom)), PIN_OVERLAP_PX, PIN_SPREAD_PX),
+    [map, stops, zoom],
+  );
+
+  return (
+    <>
+      {stops.map((stop, index) => (
+        <Marker
+          key={`${stop.kind}-${stop.arrive}`}
+          position={[stop.lat, stop.lng]}
+          icon={stopIcon(stop.kind, index === highlightedIndex, offsets[index])}
+          title={`${KIND_LABEL[stop.kind]}: ${stop.label}`}
+          zIndexOffset={index === highlightedIndex ? 1000 : 0}
+          eventHandlers={{
+            click: () => onSelectStop(index),
+            mouseover: () => onHoverStop(index),
+            mouseout: () => onHoverStop(null),
+          }}
+        >
+          <Popup>
+            <StopPopup stop={stop} timezone={timezone} />
+          </Popup>
+        </Marker>
+      ))}
+    </>
   );
 }
 

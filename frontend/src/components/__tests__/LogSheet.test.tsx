@@ -47,6 +47,16 @@ describe('LogSheet', () => {
     expect(values).toEqual(['', '', '']);
   });
 
+  it('says the empty 60 hour / 7 day column is unused, naming the cycle from the limits', () => {
+    const { container, rerender } = renderSheet();
+
+    const note = () => container.querySelector('[data-cycle="60-7"] [data-cycle-note]')?.textContent;
+    expect(note()).toBe('Not used: this log follows the 70 hour / 8 day cycle.');
+
+    rerender(<LogSheet day={JOHN_DOE_DAY} timezone="America/New_York" limits={{ ...LIMITS, cycle_limit_min: 3600, cycle_days: 7 }} />);
+    expect(note()).toBe('Not used: this log follows the 60 hour / 7 day cycle.');
+  });
+
   it('shows the John Doe totals from page 18: 10, 1.75, 7.75 and 4.5', () => {
     const { container } = renderSheet();
 
