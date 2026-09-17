@@ -397,7 +397,7 @@ def test_timezone_is_top_level_and_survives_storage(api_client, fake_ors):
     assert created["stops"][0]["arrive"].endswith("-05:00")
 
 
-def test_prod_trusts_exactly_one_proxy_hop():
+def test_prod_trusts_exactly_one_proxy_hop_and_shares_throttle_counts_across_workers():
     import json
     import os
     import subprocess
@@ -405,14 +405,18 @@ def test_prod_trusts_exactly_one_proxy_hop():
     from pathlib import Path
 
     # Settings read the environment at import, so load prod in a fresh interpreter rather than this configured one.
-    env = {**os.environ, "SECRET_KEY": "x" * 50, "DATABASE_URL": "sqlite://:memory:"}
+    env = {**os.environ, "SECRET_KEY": "x" * 50, "DATABASE_URL": "sqlite://:memory:", "ALLOWED_HOSTS": "example.com",
+           "RENDER_EXTERNAL_HOSTNAME": "spotter-eld-api.onrender.com"}
     env.pop("DJANGO_SETTINGS_MODULE", None)
-    script = "import json, config.settings.prod as prod; print(json.dumps(prod.REST_FRAMEWORK))"
+    script = ("import json, config.settings.prod as prod; "
+              "print(json.dumps([prod.REST_FRAMEWORK, prod.CACHES, prod.ALLOWED_HOSTS]))")
     result = subprocess.run(
         [sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[1], env=env,
         capture_output=True, text=True, check=True,
     )
 
-    rest_framework = json.loads(result.stdout)
+    rest_framework, caches, allowed_hosts = json.loads(result.stdout)
     assert rest_framework["NUM_PROXIES"] == 1
+    assert caches["default"]["BACKEND"] == "django.core.cache.backends.db.DatabaseCache"
+    assert allowed_hosts == ["example.com", "spotter-eld-api.onrender.com"]
     assert rest_framework["EXCEPTION_HANDLER"] == "trips.exceptions.api_exception_handler"

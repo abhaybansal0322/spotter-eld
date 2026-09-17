@@ -6,6 +6,7 @@ import pytest
 
 from tests.conftest import BASE_LAT, BASE_LNG, directions_payload, north_of_base, pelias_place, straight_trip
 from trips.services import geocode, http, planner, routing
+from trips.services.route_index import RouteIndex
 from trips.services.hos import constants
 from trips.services.hos.constants import MINUTES_PER_DAY
 from trips.services.hos.enums import DutyStatus, StopKind
@@ -111,7 +112,7 @@ def test_naming_tier_3_road_near_city_chosen_by_road_mile(fake_ors):
 
     (rest,) = [stop for stop in plan.stops if stop.kind is StopKind.REST]
     assert rest.at_mile == pytest.approx(600.0)
-    assert rest.label == "I-25 S near Dropoff, CC"  # I-25 S starts at mile 590, within 25 miles of the rest
+    assert rest.label == "I-25 S, approx 100 mi from Dropoff, CC"  # I-25 S starts at mile 590, just before the rest
     assert len(fake.urls(geocode.REVERSE_URL)) == 2 * len({e.at_mile for e in plan.events} - {0.0, 50.0, 700.0})
 
 
@@ -124,9 +125,35 @@ def test_naming_tier_3_borrows_the_nearest_town_already_resolved_in_this_plan(fa
 
     labels = {stop.at_mile: stop.label for stop in plan.stops}
     assert labels[600.0] == "Resolvedville, XX"
-    assert labels[985.0] == "US-287 N near Resolvedville, XX"
-    assert labels[1205.0] == "US-287 N near Dropoff, CC"  # 295 miles from the dropoff, 605 from the last resolved town
+    assert labels[985.0] == "US-287 N, approx 385 mi from Resolvedville, XX"
+    assert labels[1205.0] == "US-287 N, approx 295 mi from Dropoff, CC"  # 605 from the last resolved town
     assert fake.urls(geocode.REVERSE_URL)  # sanity: the chain really ran
+
+
+@pytest.mark.parametrize(
+    ("mile", "road", "label"),
+    [
+        (49.0, "I 80", "I 80 near Origin, AA"),
+        (51.0, "I 80", "I 80, approx 51 mi from Origin, AA"),
+        (51.0, None, "Approx 51 mi from Origin, AA"),
+        (1197.0, "I 80", "I 80, approx 1,197 mi from Origin, AA"),
+    ],
+    ids=["49-mi-near", "51-mi-distance", "51-mi-no-road", "thousands-separator"],
+)
+def test_fallback_names_the_distance_once_the_nearest_anchor_is_over_50_road_miles(fake_ors, mile, road, label):
+    fake_ors(straight_trip(50, 1300), reverse=lambda lat, lng, radius: None)
+    index = RouteIndex([north_of_base(0), north_of_base(1300)], 1300.0)
+    named_points = [(0.0, road)] if road else []
+
+    assert planner._name_mile(mile, index, named_points, [(0.0, "Origin, AA")]) == (label, False)
+
+
+def test_fallback_keeps_the_short_form_when_a_resolved_anchor_is_close(fake_ors):
+    fake_ors(straight_trip(50, 1300), reverse=lambda lat, lng, radius: None)
+    index = RouteIndex([north_of_base(0), north_of_base(1300)], 1300.0)
+    anchors = [(0.0, "Origin, AA"), (1180.0, "Resolvedville, XX"), (1300.0, "Dropoff, CC")]
+
+    assert planner._name_mile(1197.0, index, [(1000.0, "I 80")], anchors) == ("I 80 near Resolvedville, XX", False)
 
 
 def test_events_at_the_same_mile_share_one_lookup(fake_ors):
@@ -257,8 +284,25 @@ def test_prewarm_second_run_serves_every_lookup_from_the_cache(fake_ors):
 
     reverse_lookups = len(fake.urls(geocode.REVERSE_URL))
     assert reverse_lookups > 0
-    assert "forward  lookups   3:   0 from cache,   3 from ORS" in first.getvalue()
-    assert "forward  lookups   3:   3 from cache,   0 from ORS" in second.getvalue()
-    assert f"reverse  lookups {reverse_lookups:>3}: {reverse_lookups:>3} from cache,   0 from ORS" in second.getvalue()
+    assert "forward  lookups   3:   0 in memory,   0 from cache,   3 from ORS" in first.getvalue()
+    assert "forward  lookups   3:   0 in memory,   3 from cache,   0 from ORS" in second.getvalue()
+    assert f"reverse  lookups {reverse_lookups:>3}:   0 in memory, {reverse_lookups:>3} from cache,   0 from ORS" in second.getvalue()
     assert "ORS calls   1: search 0, reverse 0, directions 1" in second.getvalue()
     assert len(fake.calls) == calls_after_first + 1  # the route itself is never cached
+
+
+def test_prewarm_loops_over_a_comma_separated_cycle_hours_spread(fake_ors):
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    fake_ors(straight_trip(50, 1500))
+    out = StringIO()
+
+    call_command("prewarm", "Origin, AA", "Pickup, BB", "Dropoff, CC", "--start-time", "2026-09-16T06:00:00-04:00",
+                 "--cycle-hours", "0,20,50", stdout=out)
+
+    text = out.getvalue()
+    assert [line for line in text.splitlines() if line.startswith("===")] == ["=== cycle hours 0", "=== cycle hours 20", "=== cycle hours 50"]
+    assert text.count("ORS calls") == 3
+    assert "forward  lookups   3:   3 in memory,   0 from cache,   0 from ORS" in text.split("=== cycle hours 20")[1]

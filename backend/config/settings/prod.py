@@ -20,7 +20,9 @@ def _csv(name):
     return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
 
 
-ALLOWED_HOSTS = _csv("ALLOWED_HOSTS")
+# Render sets RENDER_EXTERNAL_HOSTNAME to the service's onrender.com host, which its health checks also send, so the
+# service answers on its own host without the name being known before it exists. ALLOWED_HOSTS adds custom domains.
+ALLOWED_HOSTS = _csv("ALLOWED_HOSTS") + _csv("RENDER_EXTERNAL_HOSTNAME")
 CORS_ALLOWED_ORIGINS = _csv("CORS_ALLOWED_ORIGINS")
 
 DATABASES = {
@@ -30,6 +32,12 @@ DATABASES = {
 # Render's proxy appends the client address to X-Forwarded-For. Trust exactly one hop, so the anonymous throttle
 # keys on the real client and a client-supplied X-Forwarded-For cannot mint a fresh identity per request.
 REST_FRAMEWORK = {**REST_FRAMEWORK, "NUM_PROXIES": 1}
+
+# Throttle counts live in the cache. The default in-process cache gives every gunicorn worker its own count, so the
+# 5/min limit would really be 5/min per worker. A table in Postgres is shared by all of them; createcachetable makes it.
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.db.DatabaseCache", "LOCATION": "django_cache"},
+}
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},

@@ -28,6 +28,7 @@ from .hos.sheets import DaySheet, build_sheets
 from .hos.state import DriverState, replay
 from .route_index import RouteIndex, road_at
 
+FALLBACK_NEAR_MAX_MI = 50  # beyond this many road miles, "near <city>" would mislead, so the label states the distance
 SAME_PLACE_EPSILON_DEG = 0.001  # about 110 m: two geocoded inputs closer than this are one place
 ON_DUTY_STATUSES = (DutyStatus.DRIVING, DutyStatus.ON_DUTY_NOT_DRIVING)
 ORS_COORDINATE_INDEX = re.compile(r"coordinate (\d+)")  # ORS error 2010 names the 0-based index of the bad point
@@ -212,8 +213,12 @@ def _name_mile(mile, index, named_points, anchors):
         return geocode.reverse(lat, lng), True
     except (NotFoundError, UpstreamError):
         pass  # naming is best effort; a flaky reverse lookup must not fail a plan that already has its route
-    _, city = min(anchors, key=lambda anchor: abs(anchor[0] - mile))
+    anchor_mile, city = min(anchors, key=lambda anchor: abs(anchor[0] - mile))
     road = road_at(mile, named_points)
+    distance = abs(anchor_mile - mile)
+    if distance > FALLBACK_NEAR_MAX_MI:
+        where = f"approx {distance:,.0f} mi from {city}"
+        return (f"{road}, {where}" if road else where[0].upper() + where[1:]), False
     return (f"{road} near {city}" if road else f"Near {city}"), False
 
 

@@ -266,3 +266,29 @@ def test_a_broken_cache_table_degrades_to_the_network(fake_ors, pelias_search_de
     geocode.clear_caches()
     assert geocode.forward("Denver, CO") == (39.7392, -104.9903, "Denver, CO")
     assert len(fake_ors.calls) == 2
+
+
+@pytest.mark.parametrize("status", [403, 500], ids=["quota-403", "server-500"])
+def test_quota_and_server_failures_are_never_cached_for_either_kind(monkeypatch, pelias_search_denver, pelias_reverse_cheyenne, status):
+    outcomes = [http.UpstreamError("ORS failed", status=status), http.UpstreamError("ORS failed", status=status),
+                pelias_search_denver, pelias_reverse_cheyenne]
+    calls = []
+
+    def flaky(method, url, **kwargs):
+        calls.append(url)
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(http, "request_json", flaky)
+
+    with pytest.raises(http.UpstreamError):
+        geocode.forward("Denver, CO")
+    with pytest.raises(http.UpstreamError):
+        geocode.reverse(41.14, -104.8202)
+    assert not GeocodeCache.objects.exists()
+
+    assert geocode.forward("Denver, CO")[2] == "Denver, CO"  # retried, not served a frozen failure
+    assert geocode.reverse(41.14, -104.8202) == "Cheyenne, WY"
+    assert len(calls) == 4
