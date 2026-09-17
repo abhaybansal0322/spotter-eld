@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from tests.conftest import BASE_LAT, BASE_LNG, directions_payload, north_of_base, pelias_place, straight_trip
+from trips.models import GeocodeCache
 from trips.services import geocode, http, planner, routing
 from trips.services.route_index import RouteIndex
 from trips.services.hos import constants
@@ -154,6 +155,29 @@ def test_fallback_keeps_the_short_form_when_a_resolved_anchor_is_close(fake_ors)
     anchors = [(0.0, "Origin, AA"), (1180.0, "Resolvedville, XX"), (1300.0, "Dropoff, CC")]
 
     assert planner._name_mile(1197.0, index, [(1000.0, "I 80")], anchors) == ("I 80 near Resolvedville, XX", False)
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "lookups"), [(118.0, 121.0, 1), (118.0, 126.0, 2)], ids=["3-mi-apart-share", "8-mi-apart-differ"],
+)
+def test_naming_lookups_round_the_mile_to_5(fake_ors, first, second, lookups):
+    fake = fake_ors(straight_trip(50, 1300), reverse=lambda lat, lng, radius: "Somewhere")
+    index = RouteIndex([north_of_base(0), north_of_base(1300)], 1300.0)
+
+    for mile in (first, second):
+        assert planner._name_mile(mile, index, [], [(0.0, "Origin, AA")]) == ("Somewhere, XX", True)
+
+    assert len(fake.urls(geocode.REVERSE_URL)) == lookups
+    assert GeocodeCache.objects.filter(kind="reverse").count() == lookups
+
+
+def test_rounding_the_lookup_leaves_stop_miles_exact(fake_ors):
+    fake_ors(straight_trip(52, 713))
+
+    plan = _plan()
+
+    assert [stop.at_mile for stop in plan.stops if stop.kind in (StopKind.PICKUP, StopKind.DROPOFF)] == [52.0, 713.0]
+    assert any(stop.at_mile % 5 for stop in plan.stops if stop.kind in (StopKind.REST, StopKind.BREAK, StopKind.FUEL))
 
 
 def test_events_at_the_same_mile_share_one_lookup(fake_ors):

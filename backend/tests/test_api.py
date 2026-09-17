@@ -3,6 +3,7 @@ import uuid
 
 import pytest
 from django.core.cache import cache
+from django.db import DatabaseError
 
 from tests.conftest import BASE_LAT, BASE_LNG, north_of_base, pelias_place, straight_trip
 from trips.models import LogDay, Stop, Trip
@@ -49,7 +50,8 @@ def test_valid_request_returns_201_and_full_contract(api_client, fake_ors):
 
     assert response.status_code == 201
     body = response.json()
-    assert list(body) == ["id", "timezone", "limits", "summary", "route", "stops", "days", "violations"]
+    assert list(body) == ["id", "timezone", "limits", "summary", "route", "stops", "days", "violations", "stored"]
+    assert body["stored"] is True
     uuid.UUID(body["id"])
     assert body["timezone"] == "America/New_York"
     assert list(body["summary"]) == [
@@ -278,12 +280,12 @@ def test_malformed_trip_id_returns_json_404(api_client):
 
 
 @pytest.mark.django_db
-def test_sixth_plan_request_in_a_minute_is_throttled(api_client, fake_ors):
+def test_twenty_first_plan_request_in_a_minute_is_throttled(api_client, fake_ors):
     fake_ors(straight_trip(50, 700))
 
-    statuses = [_post(api_client).status_code for _ in range(6)]
+    statuses = [_post(api_client).status_code for _ in range(21)]
 
-    assert statuses == [201, 201, 201, 201, 201, 429]
+    assert statuses == [201] * 20 + [429]
     assert "throttled" in _post(api_client).json()["detail"]
 
 
@@ -336,6 +338,26 @@ def test_trip_stored_before_the_cycle_fields_existed_reads_back_with_estimates(
     summary = response.json()["summary"]
     assert summary["cycle_used_at_start_hours"] == 10
     assert summary["on_duty_added_hours"] == added
+
+
+@pytest.mark.django_db
+def test_a_failed_save_still_returns_the_full_plan_marked_unstored(api_client, fake_ors, monkeypatch):
+    fake_ors(straight_trip(100, 2000))
+    stored_body = _post(api_client).json()
+    cache.clear()  # the second plan must not be throttled or served differently
+
+    def fail(*args, **kwargs):
+        raise DatabaseError("database is locked")
+
+    monkeypatch.setattr(Trip.objects, "create_from_payload", fail)
+    response = _post(api_client)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["stored"] is False
+    unstored = {key: value for key, value in body.items() if key not in ("id", "stored")}
+    assert unstored == {key: value for key, value in stored_body.items() if key not in ("id", "stored")}
+    assert api_client.get(f"/api/trips/{body['id']}/").status_code == 404
 
 
 @pytest.mark.django_db

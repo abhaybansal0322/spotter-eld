@@ -122,6 +122,8 @@ export interface TripPlan {
   days: DaySheet[];
   /** Always empty: the planner is violation-free by construction. Present for ELD parity. */
   violations: [];
+  /** False when the plan could not be saved, so no /trip/:id link to it would resolve. */
+  stored: boolean;
 }
 
 /** GET /api/limits/ */

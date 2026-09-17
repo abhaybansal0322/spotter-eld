@@ -76,6 +76,7 @@ class Trip(models.Model):
             "stops": [stop.payload for stop in self.stops.all()],
             "days": [day.payload for day in self.days.all()],
             "violations": [],
+            "stored": True,
         }
 
 

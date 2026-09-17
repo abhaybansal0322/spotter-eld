@@ -203,6 +203,16 @@ describe('PlanPage', () => {
     Reflect.deleteProperty(navigator, 'clipboard');
   });
 
+  it('hides the share link and keeps the address when the plan could not be stored', () => {
+    hook.state = { status: 'success', data: { ...TRIP_PLAN, stored: false }, limits: LIMITS };
+    render(<PlanPage />);
+
+    expect(screen.getByRole('region', { name: 'Trip summary' })).toBeTruthy();
+    expect(screen.queryByLabelText('Trip link')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull();
+    expect(window.location.pathname).toBe('/');
+  });
+
   it('follows back and forward between a trip address and the planner', () => {
     render(<PlanPage />);
 

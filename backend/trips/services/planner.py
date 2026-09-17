@@ -28,6 +28,8 @@ from .hos.sheets import DaySheet, build_sheets
 from .hos.state import DriverState, replay
 from .route_index import RouteIndex, road_at
 
+NAMING_MILE_STEP = 5  # reverse lookups use the nearest 5-mile point: a town label does not change within 5 miles, and
+# the shared coordinate lets a cache warmed at one start time answer the midnight splits of another
 FALLBACK_NEAR_MAX_MI = 50  # beyond this many road miles, "near <city>" would mislead, so the label states the distance
 SAME_PLACE_EPSILON_DEG = 0.001  # about 110 m: two geocoded inputs closer than this are one place
 ON_DUTY_STATUSES = (DutyStatus.DRIVING, DutyStatus.ON_DUTY_NOT_DRIVING)
@@ -208,7 +210,8 @@ def _name_miles(events, index, named_points, waypoints):
 def _name_mile(mile, index, named_points, anchors):
     """§15 chain: reverse geocode (the geocode module widens the radius once), then "<road> near <city>".
     Returns (label, resolved), resolved being False for the road-and-city fallback."""
-    lat, lng = index.coordinate_at(mile)
+    lookup_mile = NAMING_MILE_STEP * round(mile / NAMING_MILE_STEP)  # the stop keeps its exact mile; only the lookup moves
+    lat, lng = index.coordinate_at(lookup_mile)
     try:
         return geocode.reverse(lat, lng), True
     except (NotFoundError, UpstreamError):

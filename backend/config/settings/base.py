@@ -57,8 +57,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
     "UNAUTHENTICATED_USER": None,
     "EXCEPTION_HANDLER": "trips.exceptions.api_exception_handler",
-    # Sized to stay under the ORS free quota; each plan costs several geocoding calls and one routing call.
-    "DEFAULT_THROTTLE_RATES": {"trip_plan_burst": "5/min", "trip_plan_daily": "100/day"},
+    # Per client IP. Generous enough for a reviewer clicking through demos; the ORS quota and the geocode cache (§28),
+    # not this throttle, are what bound upstream spend.
+    "DEFAULT_THROTTLE_RATES": {"trip_plan_burst": "20/min", "trip_plan_daily": "300/day"},
 }
 
 LANGUAGE_CODE = "en-us"

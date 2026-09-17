@@ -103,7 +103,7 @@ export function PlanPage() {
                   <TripSummary
                     summary={state.data.summary}
                     onNewTrip={newTrip}
-                    shareUrl={`${window.location.origin}${tripPath(state.data.id)}`}
+                    shareUrl={state.data.stored ? `${window.location.origin}${tripPath(state.data.id)}` : null}
                   />
                   <CycleMeter limits={state.limits} summary={state.data.summary} stops={state.data.stops} timezone={state.data.timezone} />
                   <StopTimeline

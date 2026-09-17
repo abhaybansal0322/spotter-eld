@@ -35,7 +35,8 @@ export function useTripUrl(state: TripPlanState, open: (id: string) => Promise<v
     return () => window.removeEventListener('popstate', follow);
   }, [open, reset]);
 
-  const loadedId = state.status === 'success' ? state.data.id : null;
+  // Only a stored plan gets an address: the id of one that failed to save would open a "not found".
+  const loadedId = state.status === 'success' && state.data.stored ? state.data.id : null;
   useEffect(() => {
     if (loadedId && tripIdFromPath(window.location.pathname) !== loadedId) {
       window.history.pushState(null, '', tripPath(loadedId));

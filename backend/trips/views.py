@@ -2,7 +2,10 @@
 
 Service errors are mapped to HTTP statuses by trips.exceptions.api_exception_handler, not here.
 """
+import logging
 import uuid
+
+from django.db import DatabaseError
 
 from rest_framework import status
 from rest_framework.exceptions import NotFound
@@ -13,6 +16,8 @@ from rest_framework.views import APIView
 from .models import Trip
 from .serializers import TripPlanRequestSerializer, TripPlanResponseSerializer
 from .services.planner import limits, plan_trip
+
+logger = logging.getLogger(__name__)
 
 
 class HealthView(APIView):
@@ -45,8 +50,15 @@ class PlanTripView(APIView):
         payload = TripPlanResponseSerializer(
             plan, context={"trip_id": uuid.uuid4(), "timezone": request_serializer.validated_data["timezone"]}
         ).data
-        Trip.objects.create_from_payload(request_serializer.validated_data, payload)
-        return Response(payload, status=status.HTTP_201_CREATED)
+        # Storing the plan is best effort: it only powers the share link, and a database hiccup must not throw away a
+        # plan whose ORS calls are already spent. "stored" tells the frontend whether a link to it would resolve.
+        try:
+            Trip.objects.create_from_payload(request_serializer.validated_data, payload)
+            stored = True
+        except DatabaseError:
+            logger.exception("could not store trip %s; returning it unstored", payload["id"])
+            stored = False
+        return Response({**payload, "stored": stored}, status=status.HTTP_201_CREATED)
 
 
 class TripDetailView(APIView):
