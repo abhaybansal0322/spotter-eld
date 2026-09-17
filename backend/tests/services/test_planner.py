@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tests.conftest import BASE_LNG, directions_payload, north_of_base, straight_trip
+from tests.conftest import BASE_LAT, BASE_LNG, directions_payload, north_of_base, pelias_place, straight_trip
 from trips.services import geocode, http, planner, routing
 from trips.services.hos import constants
 from trips.services.hos.constants import MINUTES_PER_DAY
@@ -215,7 +215,7 @@ def test_summary(fake_ors):
 
 def test_current_location_at_pickup_routes_two_points(fake_ors):
     fake = fake_ors(straight_trip(90, 90, legs=1))
-    fake.addresses["origin, aa"] = fake.addresses["pickup, bb"]  # the driver is already at the shipper
+    fake.addresses["origin, aa"] = pelias_place(BASE_LNG, BASE_LAT + 1, "Origin", "AA")  # already at the shipper
 
     plan = _plan()
 

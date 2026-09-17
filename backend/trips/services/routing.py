@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 
 from . import http
-from .errors import NotFoundError, UpstreamError
+from .errors import NotFoundError, RouteTooLongError, UpstreamError
 
 DIRECTIONS_URL = f"{http.ORS_BASE_URL}/v2/directions/driving-hgv/geojson"
 PLACEHOLDER_STEP_NAMES = frozenset({"", "-"})
@@ -10,7 +10,15 @@ ORS_NOT_FOUND_STATUS = 404
 ORS_BAD_REQUEST_STATUS = 400
 # 2004 route longer than the ORS limit, 2009 no route found, 2010 point not routable: bad input, not a server fault
 ORS_NOT_FOUND_CODES = frozenset({2004, 2009, 2010})
+ORS_ROUTE_TOO_LONG_CODE = 2004
 NO_ROUTE_MESSAGE = "no drivable truck route between these locations"
+ROUTE_TOO_LONG_MESSAGE = "This trip is longer than the routing service can plan in one route. Try a shorter trip."
+# Live driving-hgv answers take 1 to 2 s, but about 7.5 s once border avoidance is on, and a cold request took 5 s.
+# The shared 8 s read timeout would fail those, so routing waits longer; http does not retry read timeouts.
+ROUTE_READ_TIMEOUT_S = 30
+# Hours-of-service logs here follow 49 CFR 395, which stops at the border: without this, a Los Angeles to Boston truck
+# route runs through Ontario and its rests are named after Canadian towns.
+ROUTE_OPTIONS = {"avoid_borders": "all"}
 
 
 @dataclass(frozen=True)
@@ -26,9 +34,12 @@ def route(coordinates):
     """Driving-hgv route through (lat, lng) coordinates in order. NotFoundError when no route exists."""
     if len(coordinates) < 2:
         raise ValueError("a route needs at least two coordinates")
-    body = {"coordinates": [[lng, lat] for lat, lng in coordinates], "units": "mi"}
+    body = {"coordinates": [[lng, lat] for lat, lng in coordinates], "units": "mi", "options": ROUTE_OPTIONS}
     try:
-        payload = http.request_json("POST", DIRECTIONS_URL, json=body, headers=http.ors_headers())
+        payload = http.request_json(
+            "POST", DIRECTIONS_URL, json=body, headers=http.ors_headers(),
+            timeout=(http.CONNECT_TIMEOUT_S, ROUTE_READ_TIMEOUT_S),
+        )
     except UpstreamError as error:
         not_found = _as_not_found(error)
         if not_found:
@@ -49,6 +60,8 @@ def _as_not_found(error):
     details = error.body.get("error") if isinstance(error.body, dict) else None
     code = details.get("code") if isinstance(details, dict) else None
     message = details.get("message") if isinstance(details, dict) else None
+    if error.status == ORS_BAD_REQUEST_STATUS and code == ORS_ROUTE_TOO_LONG_CODE:
+        return RouteTooLongError(ROUTE_TOO_LONG_MESSAGE)
     if error.status == ORS_NOT_FOUND_STATUS or (error.status == ORS_BAD_REQUEST_STATUS and code in ORS_NOT_FOUND_CODES):
         return NotFoundError(message or NO_ROUTE_MESSAGE)
     return None

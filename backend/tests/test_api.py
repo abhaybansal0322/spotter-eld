@@ -4,7 +4,7 @@ import uuid
 import pytest
 from django.core.cache import cache
 
-from tests.conftest import BASE_LNG, north_of_base, pelias_place, straight_trip
+from tests.conftest import BASE_LAT, BASE_LNG, north_of_base, pelias_place, straight_trip
 from trips.models import LogDay, Stop, Trip
 from trips.services import http, planner
 from trips.services.errors import InputError, UpstreamError
@@ -168,12 +168,23 @@ def test_unroutable_address_returns_422_naming_the_input(api_client, fake_ors):
 @pytest.mark.django_db
 def test_unroutable_index_maps_through_the_two_point_route(api_client, fake_ors):
     fake = fake_ors(_unroutable(1))
-    fake.addresses["origin, aa"] = fake.addresses["pickup, bb"]  # starting at the pickup routes [current, dropoff]
+    fake.addresses["origin, aa"] = pelias_place(BASE_LNG, BASE_LAT + 1, "Origin", "AA")  # at the pickup: routes [current, dropoff]
 
     response = _post(api_client)
 
     assert response.status_code == 422
     assert response.json()["detail"] == "No truck-accessible road was found near the dropoff location (Dropoff, CC)."
+
+
+@pytest.mark.django_db
+def test_route_over_the_distance_limit_returns_422_saying_so(api_client, fake_ors):
+    body = {"error": {"code": 2004, "message": "The approximated route distance must not be greater than 6000000.0 meters."}}
+    fake_ors(UpstreamError("HTTP 400", status=400, body=body))
+
+    response = _post(api_client)
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "This trip is longer than the routing service can plan in one route. Try a shorter trip."}
 
 
 @pytest.mark.django_db
@@ -189,12 +200,12 @@ def test_unparseable_route_error_falls_back_to_a_generic_sentence(api_client, fa
 @pytest.mark.django_db
 def test_pickup_and_dropoff_at_the_same_coordinates_returns_422(api_client, fake_ors):
     fake = fake_ors(straight_trip(50, 700))
-    fake.addresses["dropoff, cc"] = pelias_place(BASE_LNG, north_of_base(0)[0] + 1, "Pickup Annex", "BB")
+    fake.addresses["dropoff, cc"] = pelias_place(BASE_LNG, north_of_base(0)[0] + 1, "Pickup Annex", "CC")
 
     response = _post(api_client)
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "The pickup location (Pickup, BB) and dropoff location (Pickup Annex, BB) are the same place."
+    assert response.json()["detail"] == "The pickup location (Pickup, BB) and dropoff location (Pickup Annex, CC) are the same place."
     assert fake.urls(planner.routing.DIRECTIONS_URL) == []
 
 

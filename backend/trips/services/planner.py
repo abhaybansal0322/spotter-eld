@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from . import geocode, routing
-from .errors import InputError, NotFoundError, UpstreamError
+from .errors import InputError, NotFoundError, RouteTooLongError, UpstreamError
 from .hos import constants
 from .hos.constants import (
     DROPOFF_DURATION_MIN,
@@ -175,6 +175,8 @@ def _route(routed):
     """Route (role, place) pairs, rewriting "no route" errors to name the input a driver would recognise."""
     try:
         return routing.route([(lat, lng) for _, (lat, lng, _) in routed])
+    except RouteTooLongError:
+        raise
     except NotFoundError as error:
         raise NotFoundError(_unroutable_message(str(error), routed)) from error
 

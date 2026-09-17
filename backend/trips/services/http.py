@@ -8,14 +8,16 @@ from django.core.exceptions import ImproperlyConfigured
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .errors import NotFoundError, UpstreamError  # noqa: F401  re-exported for callers of the seam
+from .errors import NotFoundError, RouteTooLongError, UpstreamError  # noqa: F401  re-exported for callers of the seam
 
 ORS_BASE_URL = "https://api.openrouteservice.org"
 
 CONNECT_TIMEOUT_S = 5
 READ_TIMEOUT_S = 8
 RETRY_TOTAL = 2
-RETRY_BACKOFF_FACTOR = 0.4  # worst case near 25 s, inside gunicorn --timeout 60
+RETRY_BACKOFF_FACTOR = 0.4
+# Read timeouts are not retried: a slow answer is slow computation, and asking again only multiplies the wait.
+RETRY_READ = 0
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 RETRY_METHODS = frozenset({"GET", "POST"})
 
@@ -23,6 +25,7 @@ RETRY_METHODS = frozenset({"GET", "POST"})
 def _build_session():
     retry = Retry(
         total=RETRY_TOTAL,
+        read=RETRY_READ,
         backoff_factor=RETRY_BACKOFF_FACTOR,
         status_forcelist=RETRY_STATUSES,
         allowed_methods=RETRY_METHODS,

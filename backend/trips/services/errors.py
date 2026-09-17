@@ -19,3 +19,7 @@ class NotFoundError(Exception):
 
 class InputError(ValueError):
     """Input a caller can fix. The only ValueError the API reports as 400; any other ValueError is a bug."""
+
+
+class RouteTooLongError(NotFoundError):
+    """The route exceeds the routing service's distance limit. Its message is already fit to show a driver."""

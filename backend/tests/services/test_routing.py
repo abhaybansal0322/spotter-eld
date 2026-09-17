@@ -63,6 +63,7 @@ def test_coordinates_are_sent_to_ors_as_lng_lat(ors_directions_denver_to_cheyenn
     assert json.loads(call.request.body) == {
         "coordinates": [[-104.9903, 39.7392], [-104.9, 40.5], [-104.8202, 41.14]],
         "units": "mi",
+        "options": {"avoid_borders": "all"},
     }
     assert call.request.headers["Authorization"] == ORS_TEST_KEY
     assert ORS_TEST_KEY not in call.request.url
@@ -102,11 +103,10 @@ def test_ors_404_unroutable_point_raises_not_found():
 @pytest.mark.parametrize(
     ("code", "message"),
     [
-        (2004, "Request parameters exceed the server configuration limits. The approximated route distance must not be greater than 6000000.0 meters."),
         (2009, "Route could not be found - Unable to find a route between points 1 (-104.99 39.74) and 2 (-150.0 0.0)."),
         (2010, "Could not find routable point within a radius of 350.0 meters of specified coordinate 1: -150.0 0.0."),
     ],
-    ids=["2004-too-long", "2009-no-route", "2010-unroutable-point"],
+    ids=["2009-no-route", "2010-unroutable-point"],
 )
 @responses.activate
 def test_ors_400_route_codes_raise_not_found_with_upstream_message(code, message):
@@ -116,6 +116,31 @@ def test_ors_400_route_codes_raise_not_found_with_upstream_message(code, message
         routing.route([DENVER, (0.0, -150.0)])
 
     assert str(raised.value) == message
+
+
+@responses.activate
+def test_route_over_the_ors_distance_limit_raises_a_readable_too_long_error():
+    # Verbatim from live ORS for Miami to Fairbanks.
+    message = "Request parameters exceed the server configuration limits. The approximated route distance must not be greater than 6000000.0 meters."
+    responses.post(routing.DIRECTIONS_URL, status=400, json={"error": {"code": 2004, "message": message}})
+
+    with pytest.raises(http.RouteTooLongError) as raised:
+        routing.route([DENVER, CHEYENNE])
+
+    assert isinstance(raised.value, http.NotFoundError)
+    assert str(raised.value) == routing.ROUTE_TOO_LONG_MESSAGE
+
+
+def test_routing_waits_longer_than_the_shared_read_timeout_and_read_timeouts_are_not_retried(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(http, "request_json", lambda method, url, **kwargs: sent.update(kwargs) or {"features": []})
+
+    with pytest.raises(http.NotFoundError):
+        routing.route([DENVER, CHEYENNE])
+
+    assert sent["timeout"] == (http.CONNECT_TIMEOUT_S, routing.ROUTE_READ_TIMEOUT_S)
+    assert routing.ROUTE_READ_TIMEOUT_S > http.READ_TIMEOUT_S
+    assert http.SESSION.get_adapter("https://").max_retries.read == 0
 
 
 @responses.activate

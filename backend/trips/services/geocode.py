@@ -1,4 +1,5 @@
 """Address geocoding via OpenRouteService Pelias, cached by normalized address. Touches the network."""
+import re
 from functools import lru_cache
 
 from . import http
@@ -9,16 +10,29 @@ REVERSE_URL = f"{http.ORS_BASE_URL}/geocode/reverse"
 REVERSE_CACHE_DECIMALS = 3  # about 110 metres of latitude
 REVERSE_RADIUS_KM = 25
 REVERSE_FALLBACK_RADIUS_KM = 150  # rural interstates often have no locality within the first radius
-REVERSE_LAYERS = "locality,localadmin,county"
+# Addresses, not admin layers: Pelias answers an all-admin layer list with a point-in-polygon lookup that ignores the
+# radius ("not applicable for coarse reverse") and returns the county whenever the point is outside town limits.
+# Nearby addresses carry the town they belong to, and the radius is honoured.
+REVERSE_LAYERS = "address"
+REVERSE_SIZE = 10  # rural addresses often carry only a county, so look past the nearest few for a town
 CACHE_SIZE = 1024
+TRAILING_STATE_CODE = re.compile(r"[\s,]([a-z]{2})$")  # "denver, co" -> "co"
 
 
 def forward(address):
-    """(lat, lng, "City, ST") for a US address. Raises ValueError for a blank address, NotFoundError for no match."""
+    """(lat, lng, "City, ST") for a US address. Raises ValueError for a blank address, NotFoundError for no match.
+
+    Pelias almost never answers "no match": live, "Atlantis, ZZ" returns Atlantis, FL and "123 Main St, Nowhere, TX"
+    returns Nowhere, OK. So when the address ends in a two-letter state code, a match in another state is no match.
+    """
     normalized = " ".join(address.lower().split())
     if not normalized:
         raise ValueError("address must not be blank")
-    return _forward(normalized)
+    lat, lng, label = _forward(normalized)
+    state = TRAILING_STATE_CODE.search(normalized)
+    if state and not label.lower().endswith(f", {state.group(1)}"):
+        raise NotFoundError(f"no match for {address!r} in {state.group(1).upper()}; the closest was {label}")
+    return lat, lng, label
 
 
 def reverse(lat, lng):
@@ -56,16 +70,29 @@ def _reverse(lat, lng, radius_km):
         params={
             "point.lat": lat,
             "point.lon": lng,
-            "size": 1,
+            "size": REVERSE_SIZE,
             "boundary.circle.radius": radius_km,
             "layers": REVERSE_LAYERS,
         },
         headers=http.ors_headers(),
     )
+    return _nearest_place_label(payload, f"{lat},{lng}")
+
+
+def _nearest_place_label(payload, query):
+    """"Town, ST" from the nearest feature naming a locality, then a localadmin, then a county; None when none does.
+
+    Pelias sorts features by distance, so within each field the first match is the nearest.
+    """
     try:
-        return _first_place(payload, f"{lat},{lng}")[2]
-    except NotFoundError:
-        return None
+        places = [feature["properties"] for feature in payload["features"]]
+        for field in ("locality", "localadmin", "county"):
+            for place in places:
+                if place.get(field) and place.get("region_a"):
+                    return f"{place[field]}, {place['region_a']}"
+    except (KeyError, TypeError, AttributeError) as error:
+        raise UpstreamError(f"malformed geocoding response for {query!r}") from error
+    return None
 
 
 def _first_place(payload, query):
