@@ -66,6 +66,14 @@ def test_road_at_is_containment_not_nearest():
     assert road_at(10_000, steps) == "US-87 N"
 
 
+def test_road_at_inside_an_unnamed_step_is_none():
+    # Live LA to Boston: a short named Thruway step, then an unnamed 159.5-mile step carrying the stop at mile 2962.
+    steps = [(2828.1, "New York State Thruway"), (2842.7, None), (3002.2, "Boston Road")]
+
+    assert road_at(2830.0, steps) == "New York State Thruway"
+    assert road_at(2961.8, steps) is None
+
+
 def test_road_at_before_the_first_step_or_without_steps():
     assert road_at(4.9, [(5.0, "I-80 W")]) is None
     assert road_at(-1, [(0.0, "Broadway")]) is None

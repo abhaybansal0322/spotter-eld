@@ -46,10 +46,10 @@ class RouteIndex:
 
 
 def road_at(mile, named_points):
-    """The road the driver is on at mile: the last (mile, road) step starting at or before it.
+    """The road the driver is on at mile: the name of the last step starting at or before it.
 
     A containment lookup with no distance threshold, because one interstate step can run hundreds of miles.
-    None only when mile precedes the first named step. named_points must be sorted by mile, as ORS steps are.
+    None when mile precedes the first step or falls in an unnamed one. named_points must be sorted by mile.
     """
     position = bisect_right(named_points, mile, key=lambda point: point[0])
     return named_points[position - 1][1] if position else None

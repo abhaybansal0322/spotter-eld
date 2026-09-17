@@ -1,8 +1,10 @@
 """Geocode tests with the network mocked at the http.request_json seam."""
 import pytest
+from django.db import DatabaseError
 
 from tests.conftest import ORS_TEST_KEY, pelias_feature
-from trips.services import geocode, http
+from trips.models import GeocodeCache
+from trips.services import geocode, geocode_cache, http
 
 pytestmark = pytest.mark.usefixtures("ors")
 
@@ -133,7 +135,7 @@ def test_reverse_cache_keys_on_three_decimals(fake_ors, pelias_reverse_cheyenne)
     assert len(fake_ors.calls) == 1
     assert fake_ors.calls[0][2]["params"] == {
         "point.lat": 41.14, "point.lon": -104.82, "size": 10,
-        "boundary.circle.radius": 25, "layers": "address",
+        "boundary.circle.radius": 15, "layers": "address",
     }
 
     geocode.reverse(41.141, -104.82)  # differs at the third decimal
@@ -196,4 +198,71 @@ def test_reverse_upstream_failure_is_not_cached(monkeypatch, pelias_reverse_chey
     with pytest.raises(http.UpstreamError):
         geocode.reverse(41.14, -104.8202)
     assert geocode.reverse(41.14, -104.8202) == "Cheyenne, WY"
-    assert calls == [25, 25]
+    assert calls == [15, 15]
+
+
+# Persistent cache (spec §28). lru_cache is cleared between steps to stand in for a fresh process.
+
+
+def test_cached_answers_are_served_without_the_network(fake_ors):
+    GeocodeCache.objects.create(kind="forward", key="denver, co", label="Denver, CO", lat=39.7392, lng=-104.9903)
+    GeocodeCache.objects.create(kind="reverse", key=geocode_cache.reverse_key(41.14, -104.82, geocode.REVERSE_RADIUS_KM), label="Cheyenne, WY")
+
+    assert geocode.forward("  Denver,  CO ") == (39.7392, -104.9903, "Denver, CO")
+    assert geocode.reverse(41.14012, -104.82021) == "Cheyenne, WY"
+    assert fake_ors.calls == []
+
+
+def test_misses_are_stored_and_never_queried_again(fake_ors, pelias_empty):
+    fake_ors.payloads = [pelias_empty]
+
+    for _ in range(2):
+        with pytest.raises(http.NotFoundError):
+            geocode.forward("Nowhere, ZZ")
+        with pytest.raises(http.NotFoundError):
+            geocode.reverse(44.5, -107.5)
+        geocode.clear_caches()
+
+    assert len(fake_ors.calls) == 3  # one search and two reverse radii, all on the first pass
+    assert set(GeocodeCache.objects.values_list("kind", "key", "label")) == {
+        ("forward", "nowhere, zz", None),
+        ("reverse", "44.500,-107.500,15", None),
+        ("reverse", "44.500,-107.500,150", None),
+    }
+
+
+def test_the_table_returns_what_the_network_and_lru_cache_returned(fake_ors, pelias_search_denver, pelias_reverse_cheyenne):
+    fake_ors.payloads = [pelias_search_denver]
+    live_forward = geocode.forward("Denver, CO")
+    fake_ors.payloads = [pelias_search_denver, pelias_reverse_cheyenne]
+    live_reverse = geocode.reverse(41.14, -104.8202)
+
+    assert geocode.forward("Denver, CO") == live_forward  # lru layer
+    geocode.clear_caches()
+    assert geocode.forward("Denver, CO") == live_forward  # table layer
+    assert geocode.reverse(41.14, -104.8202) == live_reverse
+    assert len(fake_ors.calls) == 2
+
+
+def test_forward_and_reverse_entries_never_collide(fake_ors, pelias_reverse_cheyenne):
+    key = geocode_cache.reverse_key(41.14, -104.82, geocode.REVERSE_RADIUS_KM)
+    GeocodeCache.objects.create(kind="forward", key=key, label="Wrong Kind, XX", lat=0.0, lng=0.0)
+    fake_ors.payloads = [pelias_reverse_cheyenne]
+
+    assert geocode.reverse(41.14, -104.82) == "Cheyenne, WY"
+    assert len(fake_ors.calls) == 1
+    assert GeocodeCache.objects.filter(key=key).count() == 2
+
+
+def test_a_broken_cache_table_degrades_to_the_network(fake_ors, pelias_search_denver, monkeypatch):
+    def fail(*args, **kwargs):
+        raise DatabaseError("disk full")
+
+    monkeypatch.setattr(GeocodeCache.objects, "update_or_create", fail)
+    fake_ors.payloads = [pelias_search_denver]
+    assert geocode.forward("Denver, CO") == (39.7392, -104.9903, "Denver, CO")
+
+    monkeypatch.setattr(GeocodeCache.objects, "filter", fail)
+    geocode.clear_caches()
+    assert geocode.forward("Denver, CO") == (39.7392, -104.9903, "Denver, CO")
+    assert len(fake_ors.calls) == 2

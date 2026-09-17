@@ -86,7 +86,7 @@ def test_naming_tier_1_reverse_label_used_verbatim(fake_ors):
 
     (unnamed_mile,) = {event.at_mile for event in plan.events} - {0.0, 110.0, 220.0}
     assert [event.location for event in plan.events if event.at_mile == unnamed_mile] == ["Amarillo, XX"]
-    assert [params["boundary.circle.radius"] for params in fake.urls(geocode.REVERSE_URL)] == [25]
+    assert [params["boundary.circle.radius"] for params in fake.urls(geocode.REVERSE_URL)] == [15]
     assert plan.sheets[1].sheet.remarks[0] == (0, "Amarillo, XX")
 
 
@@ -95,7 +95,7 @@ def test_naming_tier_2_wider_radius(fake_ors):
 
     plan = _plan(start="2026-09-16T23:30")
 
-    assert [params["boundary.circle.radius"] for params in fake.urls(geocode.REVERSE_URL)] == [25, 150]
+    assert [params["boundary.circle.radius"] for params in fake.urls(geocode.REVERSE_URL)] == [15, 150]
     assert "Vega, XX" in {event.location for event in plan.events}
 
 
@@ -113,6 +113,20 @@ def test_naming_tier_3_road_near_city_chosen_by_road_mile(fake_ors):
     assert rest.at_mile == pytest.approx(600.0)
     assert rest.label == "I-25 S near Dropoff, CC"  # I-25 S starts at mile 590, within 25 miles of the rest
     assert len(fake.urls(geocode.REVERSE_URL)) == 2 * len({e.at_mile for e in plan.events} - {0.0, 50.0, 700.0})
+
+
+def test_naming_tier_3_borrows_the_nearest_town_already_resolved_in_this_plan(fake_ors):
+    # Reverse lookups succeed only south of mile 700. The fuel stop at mile 985 falls back: the rest resolved at mile
+    # 600 is 385 road miles away, nearer than any input (the dropoff is 515), so the label borrows that town.
+    fake = fake_ors(straight_trip(50, 1500), reverse=lambda lat, lng, radius: "Resolvedville" if lat < north_of_base(700)[0] else None)
+
+    plan = _plan()
+
+    labels = {stop.at_mile: stop.label for stop in plan.stops}
+    assert labels[600.0] == "Resolvedville, XX"
+    assert labels[985.0] == "US-287 N near Resolvedville, XX"
+    assert labels[1205.0] == "US-287 N near Dropoff, CC"  # 295 miles from the dropoff, 605 from the last resolved town
+    assert fake.urls(geocode.REVERSE_URL)  # sanity: the chain really ran
 
 
 def test_events_at_the_same_mile_share_one_lookup(fake_ors):
@@ -225,3 +239,26 @@ def test_current_location_at_pickup_routes_two_points(fake_ors):
     assert pickup.at_mile == 0.0
     assert plan.events[0].kind is StopKind.PICKUP  # loading happens before any driving
     assert _kinds(plan) == [StopKind.START, StopKind.PICKUP, StopKind.DROPOFF]
+
+
+def test_prewarm_second_run_serves_every_lookup_from_the_cache(fake_ors):
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    fake = fake_ors(straight_trip(50, 700))
+    args = ("Origin, AA", "Pickup, BB", "Dropoff, CC", "--start-time", "2026-09-16T06:00:00-04:00")
+
+    first, second = StringIO(), StringIO()
+    call_command("prewarm", *args, stdout=first)
+    calls_after_first = len(fake.calls)
+    geocode.clear_caches()  # a fresh process: only the table remembers
+    call_command("prewarm", *args, stdout=second)
+
+    reverse_lookups = len(fake.urls(geocode.REVERSE_URL))
+    assert reverse_lookups > 0
+    assert "forward  lookups   3:   0 from cache,   3 from ORS" in first.getvalue()
+    assert "forward  lookups   3:   3 from cache,   0 from ORS" in second.getvalue()
+    assert f"reverse  lookups {reverse_lookups:>3}: {reverse_lookups:>3} from cache,   0 from ORS" in second.getvalue()
+    assert "ORS calls   1: search 0, reverse 0, directions 1" in second.getvalue()
+    assert len(fake.calls) == calls_after_first + 1  # the route itself is never cached

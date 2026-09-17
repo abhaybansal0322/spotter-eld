@@ -63,20 +63,21 @@ def test_coordinates_are_sent_to_ors_as_lng_lat(ors_directions_denver_to_cheyenn
     assert json.loads(call.request.body) == {
         "coordinates": [[-104.9903, 39.7392], [-104.9, 40.5], [-104.8202, 41.14]],
         "units": "mi",
-        "options": {"avoid_borders": "all"},
+        "options": {"avoid_borders": "controlled"},
     }
     assert call.request.headers["Authorization"] == ORS_TEST_KEY
     assert ORS_TEST_KEY not in call.request.url
 
 
 @responses.activate
-def test_named_points_sorted_with_placeholders_dropped(ors_directions_denver_to_cheyenne):
+def test_named_points_keep_unnamed_road_and_drop_zero_length_arrivals(ors_directions_denver_to_cheyenne):
     responses.post(routing.DIRECTIONS_URL, json=ors_directions_denver_to_cheyenne)
 
     named = routing.route([DENVER, LOVELAND, CHEYENNE]).named_points
 
-    assert [label for _, label in named] == ["Broadway", "I-25 N", "I-25 N"]
-    assert [mile for mile, _ in named] == pytest.approx([0.0, 0.8, 41.0])
+    # The unnamed 0.3-mile ramp stays as a boundary with no name; the zero-length "-" arrival markers do not.
+    assert [label for _, label in named] == ["Broadway", None, "I-25 N", "I-25 N"]
+    assert [mile for mile, _ in named] == pytest.approx([0.0, 0.5, 0.8, 41.0])
     assert [mile for mile, _ in named] == sorted(mile for mile, _ in named)
 
 

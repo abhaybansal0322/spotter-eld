@@ -18,7 +18,7 @@ ROUTE_TOO_LONG_MESSAGE = "This trip is longer than the routing service can plan 
 ROUTE_READ_TIMEOUT_S = 30
 # Hours-of-service logs here follow 49 CFR 395, which stops at the border: without this, a Los Angeles to Boston truck
 # route runs through Ontario and its rests are named after Canadian towns.
-ROUTE_OPTIONS = {"avoid_borders": "all"}
+ROUTE_OPTIONS = {"avoid_borders": "controlled"}
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class Route:
     geometry: list[tuple[float, float]]  # (lat, lng)
     total_miles: float  # road distance, as ORS reports it
     leg_miles: list[float]  # road distance of each leg between consecutive input coordinates
-    named_points: list[tuple[float, str]]  # (mile at step start, road name), sorted by mile
+    named_points: list[tuple[float, str | None]]  # (mile at step start, road name or None when unnamed), sorted by mile
     bbox: tuple[tuple[float, float], tuple[float, float]]  # ((south, west), (north, east)), Leaflet's bounds order
 
 
@@ -68,7 +68,10 @@ def _as_not_found(error):
 
 
 def _parse(feature):
-    """Swap ORS's [lng, lat] at this boundary and pair each named step with its starting road mile."""
+    """Swap ORS's [lng, lat] at this boundary and pair each step with its starting road mile.
+
+    Unnamed steps ("-" or "") are kept with a None name. Dropping them let the previous named step appear to run on:
+    live, a 14.6-mile "New York State Thruway" step followed by an unnamed 159.5-mile one named a Massachusetts stop."""
     geometry = [(float(lat), float(lng)) for lng, lat, *_ in feature["geometry"]["coordinates"]]
     properties = feature["properties"]
 
@@ -77,9 +80,12 @@ def _parse(feature):
     for segment in properties["segments"]:
         for step in segment["steps"]:
             name = step.get("name", "").strip()
+            distance = float(step["distance"])
             if name not in PLACEHOLDER_STEP_NAMES:
                 named_points.append((mile, name))
-            mile += float(step["distance"])
+            elif distance > 0:  # a zero-length arrival marker bounds nothing
+                named_points.append((mile, None))
+            mile += distance
 
     west, south, east, north = feature["bbox"]
     return Route(

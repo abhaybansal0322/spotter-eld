@@ -20,8 +20,10 @@ def api_client():
 
 
 @pytest.fixture
-def ors(settings):
-    """A configured ORS key and cold geocode caches, for any test that reaches the network layer."""
+def ors(settings, db):
+    """A configured ORS key and cold geocode caches, for any test that reaches the network layer.
+
+    The persistent geocode cache is a table, so these tests get the (per-test, rolled back) database too."""
     settings.ORS_API_KEY = ORS_TEST_KEY
     geocode.clear_caches()
     yield

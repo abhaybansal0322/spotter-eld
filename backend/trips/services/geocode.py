@@ -2,13 +2,13 @@
 import re
 from functools import lru_cache
 
-from . import http
+from . import geocode_cache, http
 from .errors import NotFoundError, UpstreamError
 
 SEARCH_URL = f"{http.ORS_BASE_URL}/geocode/search"
 REVERSE_URL = f"{http.ORS_BASE_URL}/geocode/reverse"
 REVERSE_CACHE_DECIMALS = 3  # about 110 metres of latitude
-REVERSE_RADIUS_KM = 25
+REVERSE_RADIUS_KM = 15
 REVERSE_FALLBACK_RADIUS_KM = 150  # rural interstates often have no locality within the first radius
 # Addresses, not admin layers: Pelias answers an all-admin layer list with a point-in-polygon lookup that ignores the
 # radius ("not applicable for coarse reverse") and returns the county whenever the point is outside town limits.
@@ -51,19 +51,36 @@ def clear_caches():
 
 @lru_cache(maxsize=CACHE_SIZE)
 def _forward(normalized_address):
+    """Per process first, then the database, then ORS. Hits and misses are stored; upstream failures are not."""
+    cached = geocode_cache.lookup(geocode_cache.FORWARD, normalized_address)
+    if cached is not None:
+        if cached.label is None:
+            raise NotFoundError(f"no geocoding match for {normalized_address!r}")
+        return cached.lat, cached.lng, cached.label
+
     payload = http.request_json(
         "GET",
         SEARCH_URL,
         params={"text": normalized_address, "size": 1, "boundary.country": "US"},
         headers=http.ors_headers(),
     )
-    lat, lng, label = _first_place(payload, normalized_address)
+    try:
+        lat, lng, label = _first_place(payload, normalized_address)
+    except NotFoundError:
+        geocode_cache.store(geocode_cache.FORWARD, normalized_address, None)
+        raise
+    geocode_cache.store(geocode_cache.FORWARD, normalized_address, label, lat, lng)
     return lat, lng, label
 
 
 @lru_cache(maxsize=CACHE_SIZE)
 def _reverse(lat, lng, radius_km):
     """Label, or None on a miss so the miss is cached too. Upstream failures raise and are not cached."""
+    key = geocode_cache.reverse_key(lat, lng, radius_km)
+    cached = geocode_cache.lookup(geocode_cache.REVERSE, key)
+    if cached is not None:
+        return cached.label
+
     payload = http.request_json(
         "GET",
         REVERSE_URL,
@@ -76,7 +93,9 @@ def _reverse(lat, lng, radius_km):
         },
         headers=http.ors_headers(),
     )
-    return _nearest_place_label(payload, f"{lat},{lng}")
+    label = _nearest_place_label(payload, f"{lat},{lng}")
+    geocode_cache.store(geocode_cache.REVERSE, key, label)
+    return label
 
 
 def _nearest_place_label(payload, query):

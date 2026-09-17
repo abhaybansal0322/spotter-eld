@@ -1,4 +1,4 @@
-"""Persistence models: Trip, Stop, LogDay.
+"""Persistence models: Trip, Stop, LogDay, and the GeocodeCache that keeps the demo inside the ORS quota.
 
 A stored trip is the serialized API payload, split so each stop and each day is its own row. Retrieval
 reassembles that payload exactly; nothing is recomputed, so a plan reads back the same even after the
@@ -117,3 +117,27 @@ class LogDay(models.Model):
 
     def __str__(self):
         return f"Log for {self.date}"
+
+
+class GeocodeCache(models.Model):
+    """One ORS geocoding answer, kept for good (spec §28). A null label is a cached miss.
+
+    key is the lowercased, whitespace-collapsed address for forward lookups and "lat,lng,radius_km" with the
+    coordinate at three decimals for reverse ones. lat and lng are only set for forward hits.
+    """
+
+    FORWARD = "forward"
+    REVERSE = "reverse"
+
+    kind = models.CharField(max_length=8, choices=[(FORWARD, "Forward"), (REVERSE, "Reverse")])
+    key = models.CharField(max_length=300)
+    label = models.CharField(max_length=255, null=True, blank=True)
+    lat = models.FloatField(null=True, blank=True)
+    lng = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["kind", "key"], name="unique_geocode_cache_key")]
+
+    def __str__(self):
+        return f"{self.kind} {self.key} -> {self.label or 'miss'}"

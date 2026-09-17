@@ -191,26 +191,30 @@ def _unroutable_message(upstream_message, routed):
 
 
 def _name_miles(events, index, named_points, waypoints):
-    """One label per distinct mile. Waypoint miles use the geocoded input names; every other mile goes
-    through the stop-naming chain once, however many events share it."""
+    """One label per distinct mile, resolved in mile order. Waypoint miles use the geocoded input names; every other
+    mile goes through the stop-naming chain once, however many events share it. Each mile a reverse lookup resolves
+    becomes an anchor for later fallbacks, so a late miss borrows a nearby town rather than a distant terminus."""
     labels = {waypoint.at_mile: waypoint.label for waypoint in waypoints}
     anchors = [(waypoint.at_mile, waypoint.label) for waypoint in waypoints]
-    for event in events:
-        if event.at_mile not in labels:
-            labels[event.at_mile] = _name_mile(event.at_mile, index, named_points, anchors)
+    for mile in sorted({event.at_mile for event in events} - labels.keys()):
+        label, resolved = _name_mile(mile, index, named_points, anchors)
+        labels[mile] = label
+        if resolved:
+            anchors.append((mile, label))
     return labels
 
 
 def _name_mile(mile, index, named_points, anchors):
-    """§15 chain: reverse geocode (the geocode module widens the radius once), then "<road> near <city>"."""
+    """§15 chain: reverse geocode (the geocode module widens the radius once), then "<road> near <city>".
+    Returns (label, resolved), resolved being False for the road-and-city fallback."""
     lat, lng = index.coordinate_at(mile)
     try:
-        return geocode.reverse(lat, lng)
+        return geocode.reverse(lat, lng), True
     except (NotFoundError, UpstreamError):
         pass  # naming is best effort; a flaky reverse lookup must not fail a plan that already has its route
     _, city = min(anchors, key=lambda anchor: abs(anchor[0] - mile))
     road = road_at(mile, named_points)
-    return f"{road} near {city}" if road else f"Near {city}"
+    return (f"{road} near {city}" if road else f"Near {city}"), False
 
 
 def _stops(events, start, index, local_start):
