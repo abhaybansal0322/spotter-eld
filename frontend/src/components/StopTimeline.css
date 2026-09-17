@@ -3,10 +3,6 @@
   font-size: var(--text-xs);
 }
 
-.stop-timeline__scroll {
-  overflow-x: auto;
-}
-
 .stop-timeline__table {
   width: 100%;
   border-collapse: collapse;
@@ -40,7 +36,8 @@
 }
 
 .stop-timeline__table tbody tr:hover,
-.stop-timeline__table tbody tr:focus-visible {
+.stop-timeline__table tbody tr:focus-visible,
+.stop-timeline__table tbody tr[data-map-hover] {
   background: var(--surface-sunken);
   outline: none;
 }

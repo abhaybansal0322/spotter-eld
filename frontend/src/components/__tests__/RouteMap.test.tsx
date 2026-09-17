@@ -1,21 +1,32 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TRIP_PLAN } from '../../test/fixtures';
 import { RouteMap } from '../RouteMap';
+import { mockMap } from './leafletMock';
 
 vi.mock('react-leaflet', async () => (await import('./leafletMock')).reactLeafletMock);
 
-function renderMap(highlightedIndex: number | null = null, onSelectStop = vi.fn()) {
-  render(
+beforeEach(() => {
+  mockMap.flyTo.mockClear();
+});
+
+function mapElement(highlightedIndex: number | null, selectedIndex: number | null, onSelectStop = vi.fn(), onHoverStop = vi.fn()) {
+  return (
     <RouteMap
       route={TRIP_PLAN.route}
       stops={TRIP_PLAN.stops}
       timezone={TRIP_PLAN.timezone}
       highlightedIndex={highlightedIndex}
+      selectedIndex={selectedIndex}
       onSelectStop={onSelectStop}
-    />,
+      onHoverStop={onHoverStop}
+    />
   );
+}
+
+function renderMap(highlightedIndex: number | null = null, onSelectStop = vi.fn()) {
+  render(mapElement(highlightedIndex, null, onSelectStop));
   return onSelectStop;
 }
 
@@ -57,5 +68,28 @@ describe('RouteMap', () => {
     expect(markers.filter((marker) => marker.className.includes('stop-marker--active'))).toHaveLength(1);
     fireEvent.click(markers[3] as HTMLElement);
     expect(onSelectStop).toHaveBeenCalledWith(3);
+  });
+
+  it('reports marker hover and hover end', () => {
+    const onHoverStop = vi.fn();
+    render(mapElement(null, null, vi.fn(), onHoverStop));
+
+    const marker = screen.getAllByTestId('marker')[2] as HTMLElement;
+    fireEvent.mouseEnter(marker);
+    fireEvent.mouseLeave(marker);
+
+    expect(onHoverStop.mock.calls).toEqual([[2], [null]]);
+  });
+
+  it('pans and zooms to the selected stop, and only when the selection changes', () => {
+    const { rerender } = render(mapElement(null, null));
+    expect(mockMap.flyTo).not.toHaveBeenCalled();
+
+    rerender(mapElement(null, 2));
+    const rest = TRIP_PLAN.stops[2]!;
+    expect(mockMap.flyTo).toHaveBeenCalledWith([rest.lat, rest.lng], 9);
+
+    rerender(mapElement(3, 2)); // a hover elsewhere does not move the map
+    expect(mockMap.flyTo).toHaveBeenCalledTimes(1);
   });
 });

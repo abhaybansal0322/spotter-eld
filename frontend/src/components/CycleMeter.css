@@ -79,7 +79,7 @@
   outline: 1px solid var(--rule-strong);
 }
 
-.cycle-meter__restart {
+.cycle-meter__note {
   margin: 0;
   padding: var(--space-2) var(--space-3);
   border-left: 3px solid var(--duty-off);

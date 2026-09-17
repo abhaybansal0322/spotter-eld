@@ -27,6 +27,8 @@
     "driving_hours": 18.5,
     "elapsed_hours": 31.0,
     "days": 2,
+    "cycle_used_at_start_hours": 20.0,
+    "on_duty_added_hours": 21.0,
     "cycle_used_at_end": 41.0,
     "restart_required": false
   },

@@ -207,6 +207,8 @@ def test_summary(fake_ors):
     assert plan.summary.driving_hours == driving_min / 60
     assert plan.summary.elapsed_hours == plan.events[-1].end_min / 60
     assert plan.summary.days == 4
+    assert plan.summary.cycle_used_at_start_hours == 10
+    assert plan.summary.on_duty_added_hours == work_min / 60
     assert plan.summary.cycle_used_at_end == (600 + work_min) / 60
     assert plan.summary.restart_required is False
 

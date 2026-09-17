@@ -13,6 +13,9 @@ describe('parseLimits', () => {
       drive_limit_min: 660,
       window_limit_min: 840,
       break_after_drive_min: 480,
+      break_duration_min: 30,
+      qualifying_rest_min: 600,
+      cycle_days: 8,
     });
   });
 

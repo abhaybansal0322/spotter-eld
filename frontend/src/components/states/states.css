@@ -82,3 +82,91 @@
     animation: none;
   }
 }
+
+/* Result skeleton: the shape of a finished plan, in the chrome's sunken neutral. */
+
+.skeleton {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.skeleton__block {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.skeleton__summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.skeleton__fact {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.skeleton__line,
+.skeleton__bar,
+.skeleton__paper,
+.skeleton__map {
+  display: block;
+  background: var(--surface-sunken);
+}
+
+.skeleton__line {
+  height: 12px;
+}
+
+.skeleton__line--short {
+  width: 40%;
+}
+
+.skeleton__line--figure {
+  width: 70%;
+  height: 22px;
+}
+
+.skeleton__bar {
+  height: 14px;
+}
+
+.skeleton__map {
+  min-height: 420px;
+}
+
+.skeleton__paper {
+  height: 520px;
+}
+
+.skeleton--animated .skeleton__line,
+.skeleton--animated .skeleton__bar,
+.skeleton--animated .skeleton__paper,
+.skeleton--animated .skeleton__map {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton--animated .skeleton__line,
+  .skeleton--animated .skeleton__bar,
+  .skeleton--animated .skeleton__paper,
+  .skeleton--animated .skeleton__map {
+    animation: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .skeleton__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .skeleton__paper {
+    height: 320px;
+  }
+}

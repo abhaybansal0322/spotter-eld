@@ -33,6 +33,11 @@ export interface TripSummary {
   driving_hours: number;
   elapsed_hours: number;
   days: number;
+  /** The prior-cycle hours the plan started from. */
+  cycle_used_at_start_hours: number;
+  /** Every on-duty hour the trip adds. Exact, unlike end minus start, which loses hours rolling off the 8-day window. */
+  on_duty_added_hours: number;
+  /** The live 8-day cycle at dropoff. */
   cycle_used_at_end: number;
   restart_required: boolean;
 }
@@ -117,6 +122,11 @@ export interface TripPlan {
   days: DaySheet[];
   /** Always empty: the planner is violation-free by construction. Present for ELD parity. */
   violations: [];
+}
+
+/** GET /api/limits/ */
+export interface LimitsResponse {
+  limits: Limits;
 }
 
 // Error bodies (spec §25). Every error carries `detail`; only request validation adds per-field `errors`.

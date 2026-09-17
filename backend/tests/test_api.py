@@ -52,7 +52,10 @@ def test_valid_request_returns_201_and_full_contract(api_client, fake_ors):
     assert list(body) == ["id", "timezone", "limits", "summary", "route", "stops", "days", "violations"]
     uuid.UUID(body["id"])
     assert body["timezone"] == "America/New_York"
-    assert set(body["summary"]) == {"total_miles", "driving_hours", "elapsed_hours", "days", "cycle_used_at_end", "restart_required"}
+    assert list(body["summary"]) == [
+        "total_miles", "driving_hours", "elapsed_hours", "days",
+        "cycle_used_at_start_hours", "on_duty_added_hours", "cycle_used_at_end", "restart_required",
+    ]
     assert set(body["route"]) == {"geometry", "bbox"}
     assert all(len(point) == 2 for point in body["route"]["geometry"])
     assert len(body["route"]["bbox"]) == 2
@@ -308,6 +311,29 @@ def test_limits_match_constants(api_client, fake_ors):
 
     assert body["limits"] == planner.limits()
     assert body["limits"]["cycle_limit_min"] == 4200
+
+
+def test_limits_endpoint_serves_the_plan_limits_unthrottled_and_cacheable(api_client):
+    responses = [api_client.get("/api/limits/") for _ in range(10)]  # well past the plan endpoint's 5/min
+
+    assert [response.status_code for response in responses] == [200] * 10
+    assert responses[0].json() == {"limits": planner.limits()}
+    assert "max-age" in responses[0]["Cache-Control"]
+
+
+@pytest.mark.django_db
+def test_on_duty_added_is_exact_where_end_minus_start_is_not(api_client, fake_ors):
+    fake_ors(straight_trip(50, 5000))
+
+    body = _post(api_client, current_cycle_used=10).json()
+    summary = body["summary"]
+
+    assert summary["days"] > 8
+    on_duty_from_sheets = sum(day["totals"]["DRIVING"] + day["totals"]["ON_DUTY_NOT_DRIVING"] for day in body["days"])
+    assert summary["cycle_used_at_start_hours"] == 10
+    assert summary["on_duty_added_hours"] == on_duty_from_sheets
+    # Over eight days the live cycle has shed hours (here through the restart), so end minus start understates the trip.
+    assert summary["cycle_used_at_end"] - summary["cycle_used_at_start_hours"] < summary["on_duty_added_hours"]
 
 
 @pytest.mark.django_db

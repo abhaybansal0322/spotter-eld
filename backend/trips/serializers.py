@@ -100,6 +100,8 @@ class SummarySerializer(serializers.Serializer):
     driving_hours = serializers.FloatField()
     elapsed_hours = serializers.FloatField()
     days = serializers.IntegerField()
+    cycle_used_at_start_hours = serializers.FloatField()
+    on_duty_added_hours = serializers.FloatField()
     cycle_used_at_end = serializers.FloatField()
     restart_required = serializers.BooleanField()
 

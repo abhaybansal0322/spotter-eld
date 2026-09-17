@@ -2,7 +2,6 @@ import { useId, useState, type FormEvent, type ReactNode } from 'react';
 
 import { hoursFigure } from '../lib/format';
 import {
-  CYCLE_LIMIT_HOURS_BEFORE_FIRST_PLAN,
   EMPTY_TRIP_FORM,
   HOME_TERMINAL_ZONES,
   remainingCycleHours,
@@ -19,18 +18,18 @@ export interface TripFormProps {
   loading: boolean;
   /** Field errors from the server; shown inline against their inputs. */
   fieldErrors?: FieldErrors;
-  /** Cycle limit in hours, once a plan has supplied it. */
-  cycleLimitHours?: number;
+  /** Cycle limit in hours from the backend. Null until it arrives, or if it never does: the server then enforces it. */
+  cycleLimitHours: number | null;
 }
 
 type TextField = 'current_location' | 'pickup_location' | 'dropoff_location';
 
-export function TripForm({ onSubmit, loading, fieldErrors, cycleLimitHours = CYCLE_LIMIT_HOURS_BEFORE_FIRST_PLAN }: TripFormProps) {
+export function TripForm({ onSubmit, loading, fieldErrors, cycleLimitHours }: TripFormProps) {
   const id = useId();
   const [values, setValues] = useState<TripFormValues>(EMPTY_TRIP_FORM);
   const [clientErrors, setClientErrors] = useState<FieldErrors>({});
   const errors = Object.keys(clientErrors).length > 0 ? clientErrors : (fieldErrors ?? {});
-  const remaining = remainingCycleHours(values.current_cycle_used, cycleLimitHours);
+  const remaining = cycleLimitHours === null ? null : remainingCycleHours(values.current_cycle_used, cycleLimitHours);
 
   const set = (field: keyof TripFormValues) => (value: string) => setValues((current) => ({ ...current, [field]: value }));
 
@@ -81,26 +80,31 @@ export function TripForm({ onSubmit, loading, fieldErrors, cycleLimitHours = CYC
                 name="current_cycle_used"
                 inputMode="decimal"
                 min={0}
-                max={cycleLimitHours}
+                max={cycleLimitHours ?? undefined}
                 step={0.25}
                 value={values.current_cycle_used}
                 onChange={(event) => set('current_cycle_used')(event.target.value)}
               />
-              <span className="trip-form__unit">hours of {cycleLimitHours}</span>
+              <span className="trip-form__unit">{cycleLimitHours === null ? 'hours' : `hours of ${cycleLimitHours}`}</span>
             </div>
-            <input
-              className="trip-form__slider"
-              type="range"
-              aria-label="Current cycle used, slider"
-              min={0}
-              max={cycleLimitHours}
-              step={0.25}
-              value={remaining === null ? 0 : values.current_cycle_used}
-              onChange={(event) => set('current_cycle_used')(event.target.value)}
-            />
-            <p className="trip-form__hint" aria-live="polite">
-              {remaining === null ? 'Enter a number of hours.' : <><span className="figure">{hoursFigure(remaining)}</span> h left in the cycle</>}
-            </p>
+            {/* A slider needs a range, so it only appears once the limit is known. */}
+            {cycleLimitHours !== null && (
+              <input
+                className="trip-form__slider"
+                type="range"
+                aria-label="Current cycle used, slider"
+                min={0}
+                max={cycleLimitHours}
+                step={0.25}
+                value={remaining === null ? 0 : values.current_cycle_used}
+                onChange={(event) => set('current_cycle_used')(event.target.value)}
+              />
+            )}
+            {cycleLimitHours !== null && (
+              <p className="trip-form__hint" aria-live="polite">
+                {remaining === null ? 'Enter a number of hours.' : <><span className="figure">{hoursFigure(remaining)}</span> h left in the cycle</>}
+              </p>
+            )}
           </div>
         )}
       </Field>

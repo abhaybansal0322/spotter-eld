@@ -12,12 +12,19 @@ from rest_framework.views import APIView
 
 from .models import Trip
 from .serializers import TripPlanRequestSerializer, TripPlanResponseSerializer
-from .services.planner import plan_trip
+from .services.planner import limits, plan_trip
 
 
 class HealthView(APIView):
     def get(self, request):
         return Response({"status": "ok"})
+
+
+class LimitsView(APIView):
+    throttle_classes = ()  # static constants: nothing to protect, and the form needs them on every page load
+
+    def get(self, request):
+        return Response({"limits": limits()}, headers={"Cache-Control": "public, max-age=3600"})
 
 
 class TripPlanBurstThrottle(AnonRateThrottle):

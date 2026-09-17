@@ -250,6 +250,11 @@ time {
 .plan-page__content {
   display: grid;
   gap: var(--space-4);
+  justify-self: center;
+  width: 100%;
+  /* The widest log sheet plus its panel padding, so on wide screens the overview, tabs and sheet share one centred
+     column instead of the tab bar running on past the paper. */
+  max-width: calc(1400px + 2 * var(--space-4) + 2 * var(--space-5) + 2px);
   min-width: 0;
   padding: var(--space-4) var(--space-5) var(--space-5);
 }

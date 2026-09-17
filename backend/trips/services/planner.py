@@ -29,6 +29,7 @@ from .hos.state import DriverState, replay
 from .route_index import RouteIndex, road_at
 
 SAME_PLACE_EPSILON_DEG = 0.001  # about 110 m: two geocoded inputs closer than this are one place
+ON_DUTY_STATUSES = (DutyStatus.DRIVING, DutyStatus.ON_DUTY_NOT_DRIVING)
 ORS_COORDINATE_INDEX = re.compile(r"coordinate (\d+)")  # ORS error 2010 names the 0-based index of the bad point
 
 
@@ -58,6 +59,8 @@ class TripSummary:
     driving_hours: float
     elapsed_hours: float
     days: int
+    cycle_used_at_start_hours: float  # hours, the prior-cycle seed the engine started from
+    on_duty_added_hours: float  # hours, every on-duty minute the trip adds; unlike end minus start, nothing rolls off
     cycle_used_at_end: float  # hours, the live 8-day cycle when the trip ends
     restart_required: bool
 
@@ -117,7 +120,7 @@ def plan_trip(current, pickup, dropoff, cycle_used_min, start_time, tz_name):
         events=events,
         stops=_stops(events, waypoints[0], index, local_start),
         sheets=[DatedSheet(local_start.date() + timedelta(days=sheet.date_index), sheet) for sheet in sheets],
-        summary=_summary(events, route, len(sheets), replay(events, initial_state, midnight)),
+        summary=_summary(events, route, len(sheets), prior_cycle_min, replay(events, initial_state, midnight)),
         limits=limits(),
     )
 
@@ -236,13 +239,16 @@ def _stops(events, start, index, local_start):
     return stops
 
 
-def _summary(events, route, day_count, final_state):
+def _summary(events, route, day_count, prior_cycle_min, final_state):
     driving_min = sum(event.duration_min for event in events if event.status is DutyStatus.DRIVING)
+    on_duty_min = sum(event.duration_min for event in events if event.status in ON_DUTY_STATUSES)
     return TripSummary(
         total_miles=route.total_miles,
         driving_hours=driving_min / MINUTES_PER_HOUR,
         elapsed_hours=(events[-1].end_min if events else 0) / MINUTES_PER_HOUR,
         days=day_count,
+        cycle_used_at_start_hours=prior_cycle_min / MINUTES_PER_HOUR,
+        on_duty_added_hours=on_duty_min / MINUTES_PER_HOUR,
         cycle_used_at_end=final_state.cycle_min / MINUTES_PER_HOUR,
         restart_required=any(event.kind is StopKind.RESTART for event in events),
     )

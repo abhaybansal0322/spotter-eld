@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 
-import type { ApiErrorBody, TripPlan, TripPlanRequest } from '../types';
+import type { ApiErrorBody, Limits, LimitsResponse, TripPlan, TripPlanRequest } from '../types';
 
 /** What every failed request rejects with, whatever went wrong. */
 export interface ApiError {
@@ -42,6 +42,11 @@ export async function planTrip(request: TripPlanRequest, signal?: AbortSignal): 
 export async function getTrip(id: string, signal?: AbortSignal): Promise<TripPlan> {
   const response = await client.get<TripPlan>(`/api/trips/${encodeURIComponent(id)}/`, { signal });
   return response.data;
+}
+
+export async function getLimits(signal?: AbortSignal): Promise<Limits> {
+  const response = await client.get<LimitsResponse>('/api/limits/', { signal });
+  return response.data.limits;
 }
 
 /** Normalise any failure into `{ message, fieldErrors? }`, reading the API's `detail` and optional `errors`. */

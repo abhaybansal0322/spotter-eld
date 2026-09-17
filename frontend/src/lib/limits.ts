@@ -10,6 +10,9 @@ export interface RequiredLimits {
   drive_limit_min: number;
   window_limit_min: number;
   break_after_drive_min: number;
+  break_duration_min: number;
+  qualifying_rest_min: number;
+  cycle_days: number;
 }
 
 const REQUIRED_KEYS = [
@@ -20,6 +23,9 @@ const REQUIRED_KEYS = [
   'drive_limit_min',
   'window_limit_min',
   'break_after_drive_min',
+  'break_duration_min',
+  'qualifying_rest_min',
+  'cycle_days',
 ] as const satisfies readonly (keyof RequiredLimits)[];
 
 export class InvalidLimitsError extends Error {

@@ -12,14 +12,18 @@ export interface RouteMapProps {
   route: Route;
   stops: Stop[];
   timezone: string;
-  /** Index into stops of the stop to emphasise, from the timeline's hover or selection. */
+  /** Index into stops of the stop to emphasise, from a hover on either side or the selection. */
   highlightedIndex: number | null;
+  /** The selected stop, which the map pans and zooms to. */
+  selectedIndex: number | null;
   onSelectStop: (index: number) => void;
+  onHoverStop: (index: number | null) => void;
 }
 
 const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 const FIT_PADDING: [number, number] = [28, 28];
+const SELECTED_STOP_ZOOM = 9; // about a county across: close enough to see the stop's roads, far enough to keep the route
 
 // Built as divIcons with inline SVG: Leaflet's default marker images resolve to broken URLs under Vite.
 const iconCache = new Map<string, L.DivIcon>();
@@ -54,7 +58,17 @@ function FitToRoute({ bbox }: { bbox: [LatLng, LatLng] }) {
   return null;
 }
 
-export function RouteMap({ route, stops, timezone, highlightedIndex, onSelectStop }: RouteMapProps) {
+function FlyToStop({ stop }: { stop: Stop | undefined }) {
+  const map = useMap();
+  useEffect(() => {
+    if (stop) {
+      map.flyTo([stop.lat, stop.lng], Math.max(map.getZoom(), SELECTED_STOP_ZOOM));
+    }
+  }, [map, stop]);
+  return null;
+}
+
+export function RouteMap({ route, stops, timezone, highlightedIndex, selectedIndex, onSelectStop, onHoverStop }: RouteMapProps) {
   return (
     <section className="panel route-map" aria-label="Route map">
       <header className="panel__header">
@@ -64,6 +78,7 @@ export function RouteMap({ route, stops, timezone, highlightedIndex, onSelectSto
       <MapContainer className="route-map__canvas" bounds={route.bbox} boundsOptions={{ padding: FIT_PADDING }} scrollWheelZoom={false}>
         <TileLayer url={OSM_TILES} attribution={OSM_ATTRIBUTION} />
         <FitToRoute bbox={route.bbox} />
+        <FlyToStop stop={selectedIndex === null ? undefined : stops[selectedIndex]} />
         <Polyline positions={route.geometry} pathOptions={{ className: 'route-map__line' }} />
         {stops.map((stop, index) => (
           <Marker
@@ -72,7 +87,11 @@ export function RouteMap({ route, stops, timezone, highlightedIndex, onSelectSto
             icon={stopIcon(stop.kind, index === highlightedIndex)}
             title={`${KIND_LABEL[stop.kind]}: ${stop.label}`}
             zIndexOffset={index === highlightedIndex ? 1000 : 0}
-            eventHandlers={{ click: () => onSelectStop(index) }}
+            eventHandlers={{
+              click: () => onSelectStop(index),
+              mouseover: () => onHoverStop(index),
+              mouseout: () => onHoverStop(null),
+            }}
           >
             <Popup>
               <StopPopup stop={stop} timezone={timezone} />

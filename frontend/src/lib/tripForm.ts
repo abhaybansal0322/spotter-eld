@@ -18,10 +18,6 @@ export type FieldErrors = Record<string, string[]>;
 
 export const DEFAULT_TIMEZONE = 'America/New_York';
 
-// Limits arrive with a plan, so none exist before the first submission. This mirrors the server's 70-hour cycle
-// until a plan supplies cycle_limit_min; the server rejects anything above its own limit either way.
-export const CYCLE_LIMIT_HOURS_BEFORE_FIRST_PLAN = 70;
-
 export const HOME_TERMINAL_ZONES: readonly { value: string; label: string }[] = [
   { value: 'America/New_York', label: 'Eastern (America/New_York)' },
   { value: 'America/Chicago', label: 'Central (America/Chicago)' },
@@ -59,7 +55,8 @@ export function remainingCycleHours(text: string, limitHours: number): number | 
   return used === null ? null : Math.max(0, limitHours - used);
 }
 
-export function validateTripForm(values: TripFormValues, limitHours: number): FieldErrors {
+/** limitHours is null when the limits could not be fetched; the upper bound is then left to the server. */
+export function validateTripForm(values: TripFormValues, limitHours: number | null): FieldErrors {
   const errors: FieldErrors = {};
   const require = (field: keyof TripFormValues, label: string) => {
     if (values[field].trim() === '') {
@@ -73,7 +70,9 @@ export function validateTripForm(values: TripFormValues, limitHours: number): Fi
   const used = parseCycleHours(values.current_cycle_used);
   if (used === null) {
     errors.current_cycle_used = ['Enter the hours already used, as a number.'];
-  } else if (used < 0 || used > limitHours) {
+  } else if (used < 0) {
+    errors.current_cycle_used = ['Hours used cannot be negative.'];
+  } else if (limitHours !== null && used > limitHours) {
     errors.current_cycle_used = [`Hours used must be between 0 and ${limitHours}.`];
   }
 
