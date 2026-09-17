@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import type { RequiredLimits } from '../lib/limits';
 import { hoursFigure } from '../lib/format';
 import {
@@ -5,8 +7,7 @@ import {
   DUTY_LINE_WIDTH,
   gridFrame,
   hourLabelLayout,
-  remarkAnchor,
-  remarkLeader,
+  remarkLayout,
   rowLayout,
   tickLines,
   tickMarks,
@@ -26,7 +27,9 @@ export interface LogGridProps {
 /** The 24-hour, four-row duty status grid with its totals column and remarks band. Every coordinate comes from
  * lib/logGrid; this component only places what it is given. */
 export function LogGrid({ segments, totals, remarks, limits }: LogGridProps) {
-  const frame = gridFrame();
+  const titleId = useId();
+  const placedRemarks = remarkLayout(remarks, limits);
+  const frame = gridFrame(placedRemarks);
   const rows = rowLayout();
   const ticks = tickMarks(limits);
   const totalsLayout = totalsColumn();
@@ -37,9 +40,9 @@ export function LogGrid({ segments, totals, remarks, limits }: LogGridProps) {
       viewBox={frame.viewBox}
       preserveAspectRatio="xMidYMin meet"
       role="img"
-      aria-labelledby="log-grid-title"
+      aria-labelledby={titleId}
     >
-      <title id="log-grid-title">Duty status grid, midnight to midnight</title>
+      <title id={titleId}>Duty status grid, midnight to midnight</title>
 
       <rect className="log-grid__hour-band" {...frame.hourBand} />
       <g className="log-grid__hour-labels">
@@ -118,19 +121,17 @@ export function LogGrid({ segments, totals, remarks, limits }: LogGridProps) {
         <text className="log-grid__remarks-heading" x={frame.remarksHeading.x} y={frame.remarksHeading.y}>
           {frame.remarksHeading.text}
         </text>
-        {remarks.map((remark, index) => {
-          const anchor = remarkAnchor(remark.at_min, limits);
-          return (
-            <g key={`${remark.at_min}-${index}`} data-remark={remark.at_min}>
-              <line className="log-grid__leader" {...remarkLeader(remark.at_min, limits)} />
-              {remark.location && (
-                <text x={anchor.x} y={anchor.y} transform={anchor.transform} textAnchor="end" dominantBaseline="central">
-                  {remark.location}
-                </text>
-              )}
-            </g>
-          );
-        })}
+        {placedRemarks.map((remark, index) => (
+          <g key={`${remark.atMin}-${index}`} data-remark={remark.atMin} data-depth={remark.depth}>
+            <line className="log-grid__leader" {...remark.leader} />
+            {remark.text !== null && (
+              <text x={remark.x} y={remark.y} transform={remark.transform} textAnchor="end" dominantBaseline="central">
+                {remark.title !== null && <title>{remark.title}</title>}
+                {remark.text}
+              </text>
+            )}
+          </g>
+        ))}
       </g>
     </svg>
   );

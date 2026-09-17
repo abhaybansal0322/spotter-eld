@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { buildPolylinePoints, remarkAnchor } from '../../lib/logGrid';
+import { buildPolylinePoints, remarkLayout } from '../../lib/logGrid';
 import { JOHN_DOE_DAY, LIMITS } from '../../test/fixtures';
 import type { DayTotals, Segment } from '../../types';
 import { LogGrid } from '../LogGrid';
@@ -64,7 +64,8 @@ describe('LogGrid', () => {
     const remark = container.querySelector('[data-remark="540"]');
     const text = remark?.querySelector('text');
     expect(text?.textContent).toBe('Fredericksburg, VA');
-    expect(text?.getAttribute('transform')).toBe(remarkAnchor(540, LIMITS).transform);
+    expect(text?.getAttribute('transform')).toBe(remarkLayout(JOHN_DOE_DAY.remarks, LIMITS)[1]?.transform);
+    expect(text?.getAttribute('text-anchor')).toBe('end');
     expect(text?.getAttribute('transform')).toMatch(/^rotate\(-90 /);
     expect(remark?.querySelector('line.log-grid__leader')).not.toBeNull();
     expect(container.querySelectorAll('[data-remark]')).toHaveLength(6);
@@ -87,6 +88,25 @@ describe('LogGrid', () => {
 
     expect(container.querySelector('polyline')?.getAttribute('points')?.split(' ')).toHaveLength(2);
     expect(container.querySelector('[data-total="sum"] text')?.textContent).toBe('=24');
+  });
+
+  it('truncates a long remark and carries the full location in a title', () => {
+    const { container } = renderGrid({ remarks: [{ at_min: 600, location: 'US-287 N near Dropoff, CC' }] });
+
+    const text = container.querySelector('[data-remark="600"] text');
+    expect(text?.querySelector('title')?.textContent).toBe('US-287 N near Dropoff, CC');
+    expect(text?.lastChild?.textContent).toBe('US-287 N near Dropoff…');
+  });
+
+  it('staggers remarks 15 minutes apart', () => {
+    const { container } = renderGrid({
+      remarks: [
+        { at_min: 900, location: 'Philadelphia, PA' },
+        { at_min: 915, location: 'Camden, NJ' },
+      ],
+    });
+
+    expect([...container.querySelectorAll('[data-remark]')].map((remark) => remark.getAttribute('data-depth'))).toEqual(['shallow', 'deep']);
   });
 
   it('draws a leader but no text for a remark without a location', () => {

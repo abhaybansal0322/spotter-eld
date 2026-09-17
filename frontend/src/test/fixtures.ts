@@ -1,6 +1,7 @@
 import johnDoeDay from '../components/__tests__/johnDoeDay.json';
 import { parseLimits } from '../lib/limits';
-import type { DaySheet, Limits } from '../types';
+import tripPlan from './tripPlan.json';
+import type { DaySheet, Limits, TripPlan } from '../types';
 
 /** The limits object exactly as the API returns it (spec §25). */
 export const API_LIMITS: Limits = {
@@ -29,3 +30,8 @@ export const LIMITS = parseLimits(API_LIMITS);
 
 /** Page 18 of the FMCSA guide, serialized by the backend's own DaySerializer. */
 export const JOHN_DOE_DAY = johnDoeDay as DaySheet;
+
+
+/** Chicago to Des Moines to Denver over two days, produced by the backend planner and serializer. */
+// JSON imports widen [lat, lng] tuples to number[]; the fixture is real API output, so the cast is safe.
+export const TRIP_PLAN = tripPlan as unknown as TripPlan;

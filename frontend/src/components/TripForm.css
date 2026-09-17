@@ -1,0 +1,106 @@
+.trip-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.trip-form__intro {
+  display: grid;
+  gap: 2px;
+  margin-bottom: var(--space-1);
+}
+
+.trip-form__title {
+  font-size: var(--text-xl);
+  letter-spacing: -0.01em;
+}
+
+.trip-form__field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.trip-form__label {
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.trip-form input[type='text'],
+.trip-form input[type='number'],
+.trip-form input[type='datetime-local'],
+.trip-form select {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--text-md);
+}
+
+.trip-form__field--invalid input,
+.trip-form__field--invalid select {
+  border-color: var(--danger);
+  box-shadow: inset 2px 0 0 var(--danger);
+}
+
+.trip-form__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.trip-form__hint {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+}
+
+.trip-form__cycle {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.trip-form__cycle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.trip-form input.trip-form__cycle-number {
+  width: 88px;
+  text-align: right;
+}
+
+.trip-form__unit {
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+}
+
+.trip-form__slider {
+  width: 100%;
+  accent-color: var(--duty-on);
+}
+
+.trip-form__advanced {
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: var(--space-2) 0;
+}
+
+.trip-form__advanced summary {
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trip-form__advanced[open] {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.trip-form__submit {
+  width: 100%;
+  min-height: 36px;
+}

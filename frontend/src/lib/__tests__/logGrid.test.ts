@@ -6,8 +6,12 @@ import type { RequiredLimits } from '../limits';
 import {
   buildPolylinePoints,
   gridFrame,
+  HOUR_BAND_H,
   LEADER_H,
-  remarkLeader,
+  REMARK_DEEP_OFFSET,
+  REMARK_MAX_CHARS,
+  remarkLayout,
+  remarksBandHeight,
   rowLayout,
   tickLines,
   totalHours,
@@ -16,7 +20,6 @@ import {
   GRID_X,
   GRID_Y,
   minutesToX,
-  remarkAnchor,
   ROW_H,
   statusToY,
   tickMarks,
@@ -122,7 +125,7 @@ describe('tickMarks', () => {
 
   it('draws an hour as one full-height rule and half and quarter ticks in every row, hanging as printed', () => {
     const [hour, quarter, half] = tickMarks(LIMITS) as [TickMark, TickMark, TickMark];
-    const frame = gridFrame();
+    const frame = gridFrame([]);
 
     expect(tickLines(hour)).toEqual([{ x1: GRID_X, y1: GRID_Y, x2: GRID_X, y2: GRID_Y + GRID_H }]);
 
@@ -136,6 +139,22 @@ describe('tickMarks', () => {
     expect(halfLines.map((line) => line.y1)).toEqual([GRID_Y, GRID_Y + ROW_H, expect.any(Number), expect.any(Number)]);
     expect(halfLines.slice(2).map((line) => line.y2)).toEqual([GRID_Y + 3 * ROW_H, GRID_Y + 4 * ROW_H]);
     expect(frame.grid).toEqual({ x: GRID_X, y: GRID_Y, width: GRID_W, height: GRID_H });
+  });
+});
+
+describe('tick direction', () => {
+  it('hangs row 1 ticks from the top edge and raises row 4 ticks from the bottom edge', () => {
+    const half = tickMarks(LIMITS).find((tick) => tick.size === 'half') as TickMark;
+    const lines = tickLines(half);
+    const row1 = lines[0] as (typeof lines)[number];
+    const row4 = lines[3] as (typeof lines)[number];
+    const row1Top = GRID_Y;
+    const row4Bottom = GRID_Y + GRID_H;
+
+    expect(row1.y1).toBe(row1Top);
+    expect(row1.y2).toBeLessThan(row1Top + ROW_H);
+    expect(row4.y2).toBe(row4Bottom);
+    expect(row4.y1).toBeGreaterThan(row4Bottom - ROW_H);
   });
 });
 
@@ -154,14 +173,58 @@ describe('rowLayout and totals', () => {
   });
 });
 
-describe('remarkAnchor', () => {
-  it('rotates the label about its own anchor at the remark minute', () => {
-    const anchor = remarkAnchor(540, LIMITS);
+describe('remarkLayout', () => {
+  it('anchors each label at the end of its leader, rotated to hang down into the band', () => {
+    const [remark] = remarkLayout([{ at_min: 540, location: 'Fredericksburg, VA' }], LIMITS);
 
-    expect(anchor.x).toBe(GRID_X + 360);
-    expect(anchor.y).toBe(GRID_Y + GRID_H + LEADER_H);
-    expect(anchor.transform).toBe(`rotate(-90 ${anchor.x} ${anchor.y})`);
-    expect(remarkLeader(540, LIMITS)).toEqual({ x1: anchor.x, y1: GRID_Y + GRID_H, x2: anchor.x, y2: anchor.y });
+    expect(remark?.x).toBe(GRID_X + 360);
+    expect(remark?.y).toBe(GRID_Y + GRID_H + LEADER_H);
+    expect(remark?.leader).toEqual({ x1: GRID_X + 360, y1: GRID_Y + GRID_H, x2: GRID_X + 360, y2: GRID_Y + GRID_H + LEADER_H });
+    expect(remark?.transform).toBe(`rotate(-90 ${remark?.x} ${remark?.y})`);
+    expect(remark?.text).toBe('Fredericksburg, VA');
+    expect(remark?.title).toBeNull();
+  });
+
+  it('truncates a long label with an ellipsis and keeps the full text for its title', () => {
+    const location = 'US-287 N near Dropoff, CC';
+    const [remark] = remarkLayout([{ at_min: 600, location }], LIMITS);
+
+    expect(remark?.text).toBe('US-287 N near Dropoff…');
+    expect(remark?.text?.length).toBeLessThanOrEqual(REMARK_MAX_CHARS);
+    expect(remark?.title).toBe(location);
+  });
+
+  it('puts remarks 15 minutes apart at different depths, and returns to shallow once there is room', () => {
+    const layouts = remarkLayout(
+      [
+        { at_min: 900, location: 'Philadelphia, PA' },
+        { at_min: 915, location: 'Camden, NJ' },
+        { at_min: 930, location: 'Cherry Hill, NJ' },
+        { at_min: 1140, location: 'Newark, NJ' },
+      ],
+      LIMITS,
+    );
+
+    expect(layouts.map((layout) => layout.depth)).toEqual(['shallow', 'deep', 'shallow', 'shallow']);
+    expect(layouts[1]?.y).toBe((layouts[0]?.y ?? 0) + REMARK_DEEP_OFFSET);
+    expect(layouts[1]?.leader.y2).toBe(layouts[1]?.y);
+    // The band grows to hold a deep label only when one exists.
+    expect(remarksBandHeight(layouts)).toBe(LEADER_H + 2 * REMARK_DEEP_OFFSET);
+    expect(remarksBandHeight(layouts.slice(3))).toBe(LEADER_H + REMARK_DEEP_OFFSET);
+  });
+
+  it('keeps a leader but no text for a remark without a location', () => {
+    expect(remarkLayout([{ at_min: 60, location: null }], LIMITS)[0]).toMatchObject({ text: null, title: null });
+  });
+});
+
+describe('gridFrame', () => {
+  it('starts the viewBox at the top of the hour band, with no dead space above it', () => {
+    const frame = gridFrame([]);
+
+    expect(GRID_Y).toBe(HOUR_BAND_H);
+    expect(frame.viewBox.split(' ')[1]).toBe('0');
+    expect(frame.hourBand.y).toBe(0);
   });
 });
 
@@ -172,7 +235,7 @@ describe('limits drive the grid', () => {
     expect(minutesToX(720, halfDay)).toBe(GRID_X + GRID_W);
     expect(minutesToX(720, halfDay)).not.toBe(minutesToX(720, LIMITS));
     expect(tickMarks(halfDay).filter((tick) => tick.size === 'hour')).toHaveLength(13);
-    expect(remarkAnchor(360, halfDay).x).toBe(GRID_X + GRID_W / 2);
+    expect(remarkLayout([{ at_min: 360, location: 'Midway' }], halfDay)[0]?.x).toBe(GRID_X + GRID_W / 2);
     expect(buildPolylinePoints([{ status: 'DRIVING', start_min: 0, end_min: 720 }], halfDay)).toBe(
       `${GRID_X},${statusToY('DRIVING')} ${GRID_X + GRID_W},${statusToY('DRIVING')}`,
     );

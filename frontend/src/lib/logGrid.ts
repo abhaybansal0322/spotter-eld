@@ -1,23 +1,28 @@
 // Pure geometry for the paper log grid (spec §13). No React. Every time-based number comes from RequiredLimits;
 // the only numbers written here are pixel layout. LogGrid.tsx renders these values without doing any arithmetic.
 
-import { DUTY_STATUSES, type DayTotals, type DutyStatus, type Segment } from '../types';
+import { DUTY_STATUSES, type DayTotals, type DutyStatus, type Remark, type Segment } from '../types';
 import type { RequiredLimits } from './limits';
-
-// Spec §13 grid placement.
-export const GRID_X = 60;
-export const GRID_W = 960; // 40 px per hour, 10 px per 15 minutes on a 24-hour day
-export const GRID_Y = 200;
-export const ROW_H = 30;
-export const GRID_H = ROW_H * DUTY_STATUSES.length;
 
 // Surroundings, measured against blank-paper-log.png.
 export const LABEL_W = 130; // row labels left of the grid
-export const HOUR_BAND_H = 34; // solid black band carrying the hour labels
+export const HOUR_BAND_H = 34; // solid black band carrying the hour labels: the only header inside the SVG
 export const TOTALS_W = 90; // "Total Hours" column right of the grid
-export const LEADER_H = 12; // leader line from the grid's bottom edge down to a remark label
-export const REMARKS_H = 150; // band beneath the grid holding the rotated remark labels
 export const DUTY_LINE_WIDTH = 3;
+
+// Spec §13 grid placement. GRID_Y is the header height actually used, so the viewBox starts at y = 0.
+export const GRID_X = 60;
+export const GRID_W = 960; // 40 px per hour, 10 px per 15 minutes on a 24-hour day
+export const GRID_Y = HOUR_BAND_H;
+export const ROW_H = 30;
+export const GRID_H = ROW_H * DUTY_STATUSES.length;
+
+// Remarks band. Labels are rotated to hang downward from the end of a leader line (spec §13).
+export const REMARK_MAX_CHARS = 22;
+export const REMARK_CHAR_W = 5.6; // average advance of the 10px condensed remark face, for layout only
+export const REMARK_MIN_GAP = 14; // closer than this in x, neighbouring labels would overlap
+export const LEADER_H = 12; // shallow labels start this far below the grid
+export const REMARK_DEEP_OFFSET = Math.ceil(REMARK_MAX_CHARS * REMARK_CHAR_W) + 8; // deep labels start below any shallow one
 
 const HALF_TICK = ROW_H * 0.55;
 const QUARTER_TICK = ROW_H * 0.3;
@@ -95,10 +100,18 @@ export interface HourLabel {
   anchor: 'start' | 'middle' | 'end';
 }
 
-export interface RemarkAnchor {
+export interface RemarkLayout {
+  atMin: number;
   x: number;
+  /** Where the rotated label is anchored: the end of its leader line. Draw with text-anchor="end". */
   y: number;
   transform: string;
+  leader: Line;
+  depth: 'shallow' | 'deep';
+  /** The label as drawn, capped at REMARK_MAX_CHARS with an ellipsis; null when the remark has no location. */
+  text: string | null;
+  /** The full location, for an SVG <title>, when text was truncated. */
+  title: string | null;
 }
 
 export function minutesToX(min: number, limits: RequiredLimits): number {
@@ -192,11 +205,17 @@ export function hourLabelLayout(tick: TickMark): HourLabel {
   };
 }
 
-export function gridFrame(): GridFrame {
+/** Height of the remarks band: room for full-length shallow labels, and twice that only when a label went deep. */
+export function remarksBandHeight(remarks: RemarkLayout[]): number {
+  const deep = remarks.some((remark) => remark.depth === 'deep');
+  return LEADER_H + REMARK_DEEP_OFFSET * (deep ? 2 : 1);
+}
+
+export function gridFrame(remarks: RemarkLayout[]): GridFrame {
   const x = GRID_X - LABEL_W;
   const y = GRID_Y - HOUR_BAND_H;
   const width = LABEL_W + GRID_W + TOTALS_W;
-  const height = HOUR_BAND_H + GRID_H + REMARKS_H;
+  const height = HOUR_BAND_H + GRID_H + remarksBandHeight(remarks);
   return {
     viewBox: `${x} ${y} ${width} ${height}`,
     width,
@@ -252,16 +271,37 @@ export function totalHours(totals: DayTotals): number {
   return DUTY_STATUSES.reduce((sum, status) => sum + totals[status], 0);
 }
 
-/** Anchor for a remark's rotated label, just below its leader line. Draw with text-anchor="end" so the text
- * hangs down into the remarks band, reading bottom to top, with its last letter at the leader. */
-export function remarkAnchor(atMin: number, limits: RequiredLimits): RemarkAnchor {
-  const x = minutesToX(atMin, limits);
-  const y = GRID_Y + GRID_H + LEADER_H;
-  return { x, y, transform: `rotate(-90 ${x} ${y})` };
+/** A location capped at REMARK_MAX_CHARS, ending in an ellipsis when cut. */
+export function remarkText(location: string): string {
+  return location.length > REMARK_MAX_CHARS ? `${location.slice(0, REMARK_MAX_CHARS - 1).trimEnd()}…` : location;
 }
 
-/** Thin leader from a remark's minute on the grid's bottom edge down to its label. */
-export function remarkLeader(atMin: number, limits: RequiredLimits): Line {
-  const x = minutesToX(atMin, limits);
-  return { x1: x, y1: GRID_Y + GRID_H, x2: x, y2: GRID_Y + GRID_H + LEADER_H };
+/**
+ * Leader line and rotated label for each remark. The anchor sits at the end of the leader with text-anchor="end",
+ * so the label hangs down into the band. A remark closer than REMARK_MIN_GAP to the one before it switches depth,
+ * starting below where any shallow label can end, so neighbours 15 minutes apart never overprint.
+ */
+export function remarkLayout(remarks: Remark[], limits: RequiredLimits): RemarkLayout[] {
+  const layouts: RemarkLayout[] = [];
+  let previous: RemarkLayout | undefined;
+  for (const remark of remarks) {
+    const x = minutesToX(remark.at_min, limits);
+    const crowded = previous !== undefined && x - previous.x < REMARK_MIN_GAP;
+    const depth = crowded && previous?.depth === 'shallow' ? 'deep' : 'shallow';
+    const y = GRID_Y + GRID_H + (depth === 'deep' ? LEADER_H + REMARK_DEEP_OFFSET : LEADER_H);
+    const text = remark.location === null ? null : remarkText(remark.location);
+    const layout: RemarkLayout = {
+      atMin: remark.at_min,
+      x,
+      y,
+      transform: `rotate(-90 ${x} ${y})`,
+      leader: { x1: x, y1: GRID_Y + GRID_H, x2: x, y2: y },
+      depth,
+      text,
+      title: text !== null && text !== remark.location ? remark.location : null,
+    };
+    layouts.push(layout);
+    previous = layout;
+  }
+  return layouts;
 }

@@ -1,0 +1,53 @@
+.trip-summary {
+  display: flex;
+  align-items: stretch;
+}
+
+.trip-summary__facts {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.trip-summary__fact {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-3);
+  border-right: 1px solid var(--rule);
+}
+
+.trip-summary__fact dd {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.trip-summary__new {
+  align-self: center;
+  margin: 0 var(--space-3);
+}
+
+@media (max-width: 560px) {
+  .trip-summary {
+    flex-direction: column;
+  }
+
+  .trip-summary__facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trip-summary__fact:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .trip-summary__fact:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .trip-summary__new {
+    margin: var(--space-3);
+  }
+}

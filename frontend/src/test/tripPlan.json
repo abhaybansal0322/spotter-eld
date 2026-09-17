@@ -1,0 +1,337 @@
+{
+  "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "timezone": "America/Chicago",
+  "limits": {
+    "avg_speed_mph": 55,
+    "drive_limit_min": 660,
+    "window_limit_min": 840,
+    "qualifying_rest_min": 600,
+    "break_after_drive_min": 480,
+    "break_qualify_min": 30,
+    "cycle_limit_min": 4200,
+    "cycle_days": 8,
+    "restart_min": 2040,
+    "fuel_interval_mi": 1000,
+    "fuel_duration_min": 30,
+    "pickup_duration_min": 60,
+    "dropoff_duration_min": 60,
+    "break_duration_min": 30,
+    "grid_resolution_min": 15,
+    "minutes_per_day": 1440,
+    "minutes_per_hour": 60,
+    "recap_a_days": 7,
+    "recap_c_days": 5
+  },
+  "summary": {
+    "total_miles": 1007.0,
+    "driving_hours": 18.5,
+    "elapsed_hours": 31.0,
+    "days": 2,
+    "cycle_used_at_end": 41.0,
+    "restart_required": false
+  },
+  "route": {
+    "geometry": [
+      [
+        41.8781,
+        -87.6298
+      ],
+      [
+        41.525,
+        -88.0817
+      ],
+      [
+        41.3114,
+        -89.3151
+      ],
+      [
+        41.5236,
+        -90.5776
+      ],
+      [
+        41.6611,
+        -91.5302
+      ],
+      [
+        41.6764,
+        -92.5277
+      ],
+      [
+        41.5868,
+        -93.625
+      ],
+      [
+        41.4886,
+        -94.6247
+      ],
+      [
+        41.2619,
+        -95.8608
+      ],
+      [
+        41.2565,
+        -95.9345
+      ],
+      [
+        40.8136,
+        -96.7026
+      ],
+      [
+        40.8665,
+        -97.5923
+      ],
+      [
+        40.9264,
+        -98.342
+      ],
+      [
+        40.6993,
+        -99.0832
+      ],
+      [
+        40.7784,
+        -99.7417
+      ],
+      [
+        41.1403,
+        -100.7601
+      ],
+      [
+        41.1335,
+        -101.7196
+      ],
+      [
+        40.9847,
+        -102.2624
+      ],
+      [
+        40.6255,
+        -103.2077
+      ],
+      [
+        40.2503,
+        -103.8
+      ],
+      [
+        39.9936,
+        -104.4108
+      ],
+      [
+        39.7392,
+        -104.9903
+      ]
+    ],
+    "bbox": [
+      [
+        39.7392,
+        -104.9903
+      ],
+      [
+        41.8781,
+        -87.6298
+      ]
+    ]
+  },
+  "stops": [
+    {
+      "kind": "START",
+      "at_mile": 0.0,
+      "lat": 41.8781,
+      "lng": -87.6298,
+      "label": "Chicago, IL",
+      "arrive": "2026-09-16T06:00:00-05:00",
+      "depart": "2026-09-16T06:00:00-05:00",
+      "duration_hours": 0.0
+    },
+    {
+      "kind": "PICKUP",
+      "at_mile": 338.5,
+      "lat": 41.58675,
+      "lng": -93.62546,
+      "label": "Des Moines, IA",
+      "arrive": "2026-09-16T12:15:00-05:00",
+      "depart": "2026-09-16T13:15:00-05:00",
+      "duration_hours": 1.0
+    },
+    {
+      "kind": "REST",
+      "at_mile": 599.75,
+      "lat": 40.91498,
+      "lng": -98.19911,
+      "label": "Grand Island, NE",
+      "arrive": "2026-09-16T18:00:00-05:00",
+      "depart": "2026-09-17T04:00:00-05:00",
+      "duration_hours": 10.0
+    },
+    {
+      "kind": "FUEL",
+      "at_mile": 984.75,
+      "lat": 39.89263,
+      "lng": -104.64079,
+      "label": "Hudson, CO",
+      "arrive": "2026-09-17T11:00:00-05:00",
+      "depart": "2026-09-17T11:30:00-05:00",
+      "duration_hours": 0.5
+    },
+    {
+      "kind": "DROPOFF",
+      "at_mile": 1007.0,
+      "lat": 39.7392,
+      "lng": -104.9903,
+      "label": "Denver, CO",
+      "arrive": "2026-09-17T12:00:00-05:00",
+      "depart": "2026-09-17T13:00:00-05:00",
+      "duration_hours": 1.0
+    }
+  ],
+  "days": [
+    {
+      "date": "2026-09-16",
+      "date_index": 0,
+      "header": {
+        "from": "Chicago, IL",
+        "to": "Grand Island, NE",
+        "total_mileage_today": 605.0,
+        "home_terminal_timezone": "America/Chicago",
+        "carrier_name": null,
+        "main_office_address": null,
+        "home_terminal_address": null,
+        "vehicle_numbers": null,
+        "driver_name": null,
+        "co_driver": null,
+        "shipping_document": null
+      },
+      "segments": [
+        {
+          "status": "OFF_DUTY",
+          "start_min": 0,
+          "end_min": 360
+        },
+        {
+          "status": "DRIVING",
+          "start_min": 360,
+          "end_min": 735
+        },
+        {
+          "status": "ON_DUTY_NOT_DRIVING",
+          "start_min": 735,
+          "end_min": 795
+        },
+        {
+          "status": "DRIVING",
+          "start_min": 795,
+          "end_min": 1080
+        },
+        {
+          "status": "SLEEPER_BERTH",
+          "start_min": 1080,
+          "end_min": 1440
+        }
+      ],
+      "totals": {
+        "OFF_DUTY": 6.0,
+        "SLEEPER_BERTH": 6.0,
+        "DRIVING": 11.0,
+        "ON_DUTY_NOT_DRIVING": 1.0
+      },
+      "total_miles_driving": 605.0,
+      "remarks": [
+        {
+          "at_min": 360,
+          "location": "Chicago, IL"
+        },
+        {
+          "at_min": 735,
+          "location": "Des Moines, IA"
+        },
+        {
+          "at_min": 1080,
+          "location": "Grand Island, NE"
+        }
+      ],
+      "recap": {
+        "on_duty_today_hours": 12.0,
+        "a_on_duty_last_7_days_hours": 32.0,
+        "b_available_tomorrow_hours": 38.0,
+        "c_on_duty_last_5_days_hours": 32.0
+      }
+    },
+    {
+      "date": "2026-09-17",
+      "date_index": 1,
+      "header": {
+        "from": "Grand Island, NE",
+        "to": "Denver, CO",
+        "total_mileage_today": 412.5,
+        "home_terminal_timezone": "America/Chicago",
+        "carrier_name": null,
+        "main_office_address": null,
+        "home_terminal_address": null,
+        "vehicle_numbers": null,
+        "driver_name": null,
+        "co_driver": null,
+        "shipping_document": null
+      },
+      "segments": [
+        {
+          "status": "SLEEPER_BERTH",
+          "start_min": 0,
+          "end_min": 240
+        },
+        {
+          "status": "DRIVING",
+          "start_min": 240,
+          "end_min": 660
+        },
+        {
+          "status": "ON_DUTY_NOT_DRIVING",
+          "start_min": 660,
+          "end_min": 690
+        },
+        {
+          "status": "DRIVING",
+          "start_min": 690,
+          "end_min": 720
+        },
+        {
+          "status": "ON_DUTY_NOT_DRIVING",
+          "start_min": 720,
+          "end_min": 780
+        },
+        {
+          "status": "OFF_DUTY",
+          "start_min": 780,
+          "end_min": 1440
+        }
+      ],
+      "totals": {
+        "OFF_DUTY": 11.0,
+        "SLEEPER_BERTH": 4.0,
+        "DRIVING": 7.5,
+        "ON_DUTY_NOT_DRIVING": 1.5
+      },
+      "total_miles_driving": 412.5,
+      "remarks": [
+        {
+          "at_min": 0,
+          "location": "Grand Island, NE"
+        },
+        {
+          "at_min": 660,
+          "location": "Hudson, CO"
+        },
+        {
+          "at_min": 720,
+          "location": "Denver, CO"
+        }
+      ],
+      "recap": {
+        "on_duty_today_hours": 9.0,
+        "a_on_duty_last_7_days_hours": 41.0,
+        "b_available_tomorrow_hours": 29.0,
+        "c_on_duty_last_5_days_hours": 41.0
+      }
+    }
+  ],
+  "violations": []
+}

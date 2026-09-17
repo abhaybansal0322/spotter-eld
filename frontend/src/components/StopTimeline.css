@@ -1,0 +1,57 @@
+.stop-timeline__zone {
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+}
+
+.stop-timeline__scroll {
+  overflow-x: auto;
+}
+
+.stop-timeline__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.stop-timeline__table th {
+  padding: 6px var(--space-3);
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.stop-timeline__table td {
+  padding: 6px var(--space-3);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.stop-timeline__table .numeric {
+  text-align: right;
+}
+
+.stop-timeline__table tbody tr {
+  cursor: pointer;
+}
+
+.stop-timeline__table tbody tr:hover,
+.stop-timeline__table tbody tr:focus-visible {
+  background: var(--surface-sunken);
+  outline: none;
+}
+
+.stop-timeline__table tbody tr[aria-selected='true'] {
+  background: var(--surface-sunken);
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+.stop-timeline__label {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
