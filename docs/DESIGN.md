@@ -1,14 +1,14 @@
 # spotter-eld: Design
 
-The design record for spotter-eld, a Django and React trip planner that produces FMCSA hours-of-service logs. It was written before the build as the single source of truth and amended as live testing turned up problems; the amendments are left in place, so the notes read as decisions with their reasons rather than as a clean-room spec.
+The design record for spotter-eld, a Django and React trip planner that produces FMCSA hours-of-service logs. It sets out the decisions behind the system and the reasons for them. Several were revised after testing against the live OpenRouteService API; where that happened the revised reasoning sits alongside the original, so the notes read as decisions with their reasons rather than as a clean-room spec.
 
-Sections 1 and 2 of the working copy (the assignment text and a table of private reference files) are omitted. The remaining sections keep their numbers, so references such as "spec §28" in code comments still resolve here.
+Section numbers are stable, so references such as "spec §28" in code comments resolve here. Gaps in the numbering (1, 2, 18, 21, 29) are sections about the assignment text and the build process rather than the system, and are not included.
 
 ---
 
 ## 3. Regulatory scope (49 CFR Part 395, property-carrying, 70hr/8day)
 
-### In scope, must be implemented
+### In scope
 
 **11-hour driving limit (§395.3(a)(3)).** Maximum 11 hours of driving after 10 consecutive hours off duty.
 
@@ -20,7 +20,7 @@ Sections 1 and 2 of the working copy (the assignment text and a table of private
 
 **34-hour restart (§395.3(c)).** Optional. If the cycle blocks the trip, insert 34 consecutive off-duty hours, reset the cycle to zero, and annotate it in remarks.
 
-**On-duty work after hour 14 is legal.** Only driving is prohibited. Model the 14-hour rule as a constraint on driving, never as something that force-ends the day.
+**On-duty work after hour 14 is legal.** Only driving is prohibited. The 14-hour rule is modelled as a constraint on driving, never as something that force-ends the day.
 
 **Fueling is on-duty time (§395.2).** "All time inspecting, servicing, or conditioning any truck, including fueling it." It burns the 14-hour window and the 70-hour cycle, not driving time.
 
@@ -37,14 +37,14 @@ Named placeholder classes with a CFR citation and `NotImplementedError`. Not reg
 
 ---
 
-## 4. Assumptions we are making
+## 4. Assumptions
 
-The assignment does not specify these. Each one goes in the README with its reasoning so the reviewer sees deliberate choices rather than guesses.
+The assignment does not specify these, so each is a deliberate choice, listed with its basis.
 
 | Assumption | Value | Basis |
 |---|---|---|
-| Average speed | 55 mph | Standard trucking planning figure. Brief gives no speed |
-| Fuel stop duration | 30 minutes, on duty not driving | Brief gives frequency only |
+| Average speed | 55 mph | Standard trucking planning figure. The assignment gives no speed |
+| Fuel stop duration | 30 minutes, on duty not driving | The assignment gives frequency only |
 | Pickup duration | 1 hour, on duty not driving | Given |
 | Dropoff duration | 1 hour, on duty not driving | Given |
 | Driver starting condition | Fresh off 10 consecutive hours off duty | Only a cycle-hours aggregate is supplied, no duty history |
@@ -74,7 +74,7 @@ API keys live in backend env vars only. The browser never calls ORS directly.
 
 ## 6. File tree
 
-Generated from the repository at the deploy step (§29): a snapshot, not a plan. `node_modules`, `venv`, `__pycache__`, `.git`, `dist` and `.pytest_cache` are omitted, and migrations are named by folder only.
+Generated from the repository: a snapshot of where files live, not a plan. The layering rules in §7, not this tree, decide where a file may go. `node_modules`, `venv`, `__pycache__`, `.git`, `dist` and `.pytest_cache` are omitted, and migrations are named by folder only.
 
 ```
 spotter-eld/
@@ -331,7 +331,7 @@ A 34-hour restart trivially contains 10 consecutive hours off duty, so `apply_ev
 
 **Tuple order is the tie-break order.** When two rules report zero, the first wins. A 10-hour rest does not restore an exhausted cycle, and a 30-minute break does not restore the 14-hour window. This tuple in `rules.py` is the only place rule priority is encoded.
 
-`FuelStopRule` is operational rather than 49 CFR, but it has the identical shape. Keeping it as a rule is what lets `miles_since_fuel` stay in DriverState instead of being special-cased in the loop. Say so in its docstring.
+`FuelStopRule` is operational rather than 49 CFR, but it has the identical shape. Keeping it as a rule is what lets `miles_since_fuel` stay in DriverState instead of being special-cased in the loop. Its docstring says so.
 
 ---
 
@@ -365,7 +365,7 @@ Two behaviors that must be exactly right:
 - Distance-derived minutes round **up**: `ceil_to_grid(miles / AVG_SPEED_MPH * MINUTES_PER_HOUR)`
 - Every limit in `constants.py` (660, 840, 480, 4200, 2040) and every waypoint duration (60, 60, 30) is already a multiple of 15
 
-So every emitted duration is a multiple of 15 and the totals are exact. An allowance of 1 to 14 minutes floors to zero and triggers its rest slightly early, which is legal and conservative. This cannot loop forever, because the inserted rest resets the accumulator that bound. Snapping after emission would let a chunk round up past its allowance, which is a violation, or round down to a zero-length chunk, which hangs the loop. Do not do it.
+So every emitted duration is a multiple of 15 and the totals are exact. An allowance of 1 to 14 minutes floors to zero and triggers its rest slightly early, which is legal and conservative. This cannot loop forever, because the inserted rest resets the accumulator that bound. Snapping after emission would let a chunk round up past its allowance, which is a violation, or round down to a zero-length chunk, which hangs the loop. The engine never snaps.
 
 **No rest after the final waypoint.** The loop terminates when the last waypoint is consumed. The end-of-trip dropoff never gets a trailing 10-hour rest appended.
 
@@ -407,11 +407,13 @@ Adjacent events sharing a status merge into one segment, so every segment bounda
 
 **Invariant, asserted in tests for every sheet:** `off + sb + drive + on == 1440`.
 
-`recap` carries on-duty minutes today (one box on the form, holding the total of lines 3 and 4) and the 70hr/8day A, B and C boxes, computed **from the sheets' own per-day segment totals**, plus the prior-cycle seed for days before the trip. Per the printed form, **A covers the last 7 days including today** and C the last 5. B is `CYCLE_LIMIT_MIN - A`, floored at zero, and is truthfully "hours available tomorrow", because tomorrow's rolling 8-day window spans tomorrow plus those 7 days. `state.cycle_min` stays on 8 days: it is the live cycle driving the rule, a different number from the recap's tomorrow-facing projection. Say so in a comment, or it reads as a bug. Sums reach back only as far as the most recent entry in `restart_day_indices`. `day_on_duty` is engine-internal cycle bookkeeping and is never read by `sheets.py`. Do not leave the recap blank.
+`recap` carries on-duty minutes today (one box on the form, holding the total of lines 3 and 4) and the 70hr/8day A, B and C boxes, computed **from the sheets' own per-day segment totals**, plus the prior-cycle seed for days before the trip. Per the printed form, **A covers the last 7 days including today** and C the last 5. B is `CYCLE_LIMIT_MIN - A`, floored at zero, and is truthfully "hours available tomorrow", because tomorrow's rolling 8-day window spans tomorrow plus those 7 days. `state.cycle_min` stays on 8 days: it is the live cycle driving the rule, a different number from the recap's tomorrow-facing projection. A comment in `sheets.py` says so, since it otherwise reads as a bug. Sums reach back only as far as the most recent entry in `restart_day_indices`. `day_on_duty` is engine-internal cycle bookkeeping and is never read by `sheets.py`. The recap is always filled in.
 
 ---
 
 ## 12. API contract
+
+The original shape of the contract. §25 is the contract as built.
 
 `POST /api/trips/plan/`
 
@@ -455,7 +457,7 @@ Response:
 
 The serializer rounds `start_time` **down** to the nearest 15 minutes before anything downstream sees it, so every derived boundary lands on the grid. `start_time` defaults to now in the supplied zone, `timezone` defaults to `America/New_York`. Both sit behind an Advanced toggle in the UI so the visible form is exactly the four required inputs: current location, pickup, dropoff and current cycle used.
 
-`violations` is a typed array that is always empty in this version. The planner is violation-free by construction, and the field exists for parity with real ELD output. Do not invent entries for it.
+`violations` is a typed array that is always empty in this version. The planner is violation-free by construction, and the field exists for parity with real ELD output. It never carries invented entries.
 
 Validation failures return 400 with a flat readable message. Unroutable addresses return 422.
 
@@ -482,7 +484,7 @@ statusToY(s)  = GRID_Y + s.row_index * ROW_H + ROW_H / 2
 
 **Totals.** Per-status total at the right edge of each row.
 
-**Remarks row.** Beneath the grid, city and state abbreviation at every duty status change, rotated vertical text. The anchor sits at the **end of the leader line** with `text-anchor="end"`, so the label hangs downward into the remarks band. Anchoring below the grid and rotating from there, as an earlier draft had it, runs the text upward into the grid itself.
+**Remarks row.** Beneath the grid, city and state abbreviation at every duty status change, rotated vertical text. The anchor sits at the **end of the leader line** with `text-anchor="end"`, so the label hangs downward into the remarks band. Anchoring below the grid and rotating from there would run the text upward into the grid itself.
 
 ```jsx
 <text transform={`rotate(-90 ${x} ${y})`} x={x} y={y} textAnchor="end">Richmond, VA</text>
@@ -546,6 +548,8 @@ Loading, error and empty states on every data view.
 
 When the nearest anchor is more than 50 road miles away, the label carries the distance instead of implying proximity: `"I 80, approx 1,197 mi from Boston, MA"`. This only happens when reverse geocoding is unavailable for every stop, which the §28 cache makes rare, and it is honest rather than wrong
 
+Each lookup uses the route coordinate at the stop's mile rounded to the nearest 5 (`NAMING_MILE_STEP`). A town label does not change within 5 miles, and the shared coordinate lets cached answers serve nearby points. The stop itself keeps its exact mile.
+
 The label is built from `locality`, then `localadmin`, then `county`. `region` is not in the chain: it yields `"Wyoming, WY"`, which is not a city or town. There is no mile-only fallback either, since three geocoded input cities are always available, so every label carries a place and a state.
 
 Only inserted rests and stops are named, never every vertex, so the call volume is a handful per trip. Results cache by coordinate rounded to three decimals, roughly 110 metres, and **misses cache too**: the private helper returns `None` rather than raising, so a rural point is not re-queried on every request.
@@ -598,7 +602,7 @@ Only inserted rests and stops are named, never every vertex, so the call volume 
 
 This is the single test that says the interpretation of the regulation is correct.
 
-It belongs to the **sheets and segments** step, not the engine step. The day contains a one-hour off-duty lunch, a 1.75-hour sleeper period, a two-hour post-trip and a fuel stop at roughly mile 80. None of those are producible by an engine rule or a waypoint. It is a hand-written `DutyEvent` list fed to `split_at_midnight` and `build_sheets`.
+It exercises the **sheets and segments** layer, not the engine. The day contains a one-hour off-duty lunch, a 1.75-hour sleeper period, a two-hour post-trip and a fuel stop at roughly mile 80. None of those are producible by an engine rule or a waypoint. It is a hand-written `DutyEvent` list fed to `split_at_midnight` and `build_sheets`.
 
 **Segments and sheets.** Handcrafted event lists including one event straddling midnight and one trip starting at 22:00. `off + sb + drive + on == 1440` asserted on every sheet in every test via a shared helper.
 
@@ -612,60 +616,28 @@ All network mocked at the `services/http.py` seam with canned ORS payloads in `c
 
 ---
 
-## 18. Execution order
-
-This is a **from-scratch build**. No prior code exists. Steps 3 and 4 decide the grade; everything after is presentation.
-
-1. Repo audit (done)
-2. Scaffold: git init, Django project, settings split, urls split, `.env.example`, `.gitignore`, pinned requirements, pytest harness, health endpoint
-3. `hos/` primitives and rules: constants, enums, events, state, rules, engine, purity test, rule tests, engine scenario tests
-4. `segments.py` and `sheets.py` with their tests, including the John Doe fixture
-5. `route_index.py` with its test
-6. `geocode.py`, `routing.py`, `http.py` behind mockable seams
-7. `planner.py`, orchestrating waypoints, engine, location backfill and sheets
-8. Models, migration, serializers carrying the `limits` block, thin views, `test_api.py`
-9. Frontend scaffold: Vite, React 18, TypeScript, vitest, `.env.example`
-10. Frontend data layer: client, hook, types, then `lib/logGrid.ts` with tests
-11. Components, states directory, `LogSheet` and `LogGrid` split cleanly, `PlanPage`
-12. Deploy, README, Loom
-
----
-
 ## 19. Risks
 
-**Render cold start.** Free tier sleeps after 15 minutes and takes 30 to 60 seconds to wake. If the reviewer opens a cold link and it hangs, it reads as broken. Mitigate with a loading state that says what is happening, plus a cron-job.org ping every 10 minutes.
+**Render cold start.** The free tier sleeps after 15 minutes idle; the first request after that was measured at 45 seconds. A visitor who opens a cold link and watches it hang reads the app as broken. The mitigations are a loading state that says what is happening and a scheduled ping to `/api/health/` every 10 minutes.
 
-**ORS rate limits.** Measured on a real free key, far below the published figures: directions 200/day, geocode search 100/day, reverse around 100/day. A long plan spends 3 searches, 1 route and about 11 reverse calls, so an uncached key dies after roughly 9 long trips. Beyond the quota, reverse returns HTTP 403 `{"error": "Quota exceeded"}` with no headers, labels silently degrade to the fallback tier, and planning eventually fails outright. This is why §28 exists. The endpoint's own 100/day throttle is never the binding constraint.
+**ORS rate limits.** Measured on a real free key, far below the published figures: directions 200/day, geocode search 100/day, reverse around 100/day. A long plan spends 3 searches, 1 route and about 11 reverse calls, so an uncached key dies after roughly 9 long trips. Beyond the quota, reverse returns HTTP 403 `{"error": "Quota exceeded"}` with no headers, labels silently degrade to the fallback tier, and planning eventually fails outright. This is why §28 exists. The endpoint's own per-client throttle is never the binding constraint.
 
 **Key leakage.** Routing and geocoding go through Django. The key is a backend env var only.
 
-**Time zones.** Store UTC, render in the single home terminal zone. Required by §395.8 and worth showing off.
+**Time zones.** Stored as UTC, rendered in the single home terminal zone, as §395.8 requires.
 
 ---
 
-## 20. Deliverable polish
+## 20. Documentation
 
-**README:** live URL first, one screenshot of a filled log sheet, the assumptions table from section 4 with a CFR citation per rule, then local setup.
-
-**Loom, 4 minutes:** 60s live multi-day trip end to end, 90s on the engine loop and constraint ordering, 60s on the SVG grid math, 30s on structure and tests.
-
----
-
-## 21. Working agreement for the agent
-
-- One step at a time. Do the step named in the prompt and nothing else.
-- Report back with what changed, what the tests say, and anything that contradicted this spec.
-- Do not invent abstractions. If something seems to need one, raise it instead of adding it.
-- Do not modify files outside the step's stated scope.
-- If a decision is genuinely undetermined by this document, stop and ask. Do not guess and move on.
+The README leads with the live URL and a filled log sheet, then the assumptions from §4 with a CFR citation per rule, then local setup. This document holds the reasoning.
 
 ---
 
 ## 22. Environment notes
 
-- Local Python may be 3.13. That is fine. Render pins 3.12 via `render.yaml`. Do not pin micro versions in `requirements.txt`.
-- Confirm ORS quotas on the dashboard before step 6. Geocoding may have a lower daily cap than directions. Cache geocode results by normalized address string regardless.
-- `.gitignore` must cover `.DS_Store`, `.claude/`, `venv/`, `node_modules/`, `.env`, `__pycache__/`, `*.sqlite3`, `dist/`.
+- Local Python may be 3.13. Render pins 3.12 via `render.yaml`, and `requirements.txt` pins no micro versions.
+- ORS quotas differ by endpoint, and geocoding's are lower than directions' (§19). Geocode results are cached by normalized address string regardless.
 - `cycle_used_at_start_hours` is the engine's seed, not the submitted figure. The seed rounds up to the whole minute, so it can exceed the input by under a minute.
 - The rolling 8-day drop-off never fires on a real plan. The engine plans at the limits, so the cycle reaches 70 hours and takes a 34-hour restart before eight days elapse. The drop-off path is still implemented and tested synthetically, because a driver arriving with a partial cycle can reach it; no generated trip does.
 - Trips spanning a daylight-saving changeover drift by an hour. The HOS layer treats every day as 1440 minutes and `minutes_to_first_midnight` is wall-clock, which keeps it inside 1 to 1440; measuring elapsed time instead would hand `plan_duty` a 1500-minute day on the fall-back date.
@@ -674,7 +646,7 @@ This is a **from-scratch build**. No prior code exists. Steps 3 and 4 decide the
 - Response geometry is rounded to 5 decimals and Douglas-Peucker simplified at 0.0001 degrees. `RouteIndex` keeps the full polyline server-side, so mile lookups lose no accuracy; only the wire format and the stored row are reduced.
 - `prior_cycle_min` is one lump, so it stays in recap A while the 7-day window still reaches before the trip, and in C while the 5-day window does. This can overstate A and C, never understate them, and B is floored at zero.
 - `total_miles_driving` is driving minutes at `AVG_SPEED_MPH`, so it can differ slightly from route distance by the grid ceiling. On a hand-written fixture from a real log it differs by more, which is expected and not a defect.
-- Two accepted simplifications for the README, both legal and both erring conservative: a 30-minute break can land shortly before a forced 10-hour rest and do little useful work, which is exactly how real paper logs look; and a blocked cycle always inserts a full 34-hour restart rather than waiting for the oldest day to roll off, which would require simulating idle days for a marginal gain.
+- Two accepted simplifications, both legal and both erring conservative: a 30-minute break can land shortly before a forced 10-hour rest and do little useful work, which is exactly how real paper logs look; and a blocked cycle always inserts a full 34-hour restart rather than waiting for the oldest day to roll off, which would require simulating idle days for a marginal gain.
 - The 10-hour qualifying rest is recognised only as a single event, not as consecutive off-duty and sleeper periods combining. The engine never emits adjacent rests, so the case cannot arise.
 
 ---
@@ -734,7 +706,7 @@ Mileage is derived from driving duration rather than carried on the event. Since
 
 ## 25. API contract, as built
 
-Frozen. The frontend builds against exactly this. One vocabulary for duty status throughout: `OFF_DUTY`, `SLEEPER_BERTH`, `DRIVING`, `ON_DUTY_NOT_DRIVING`, in that row order.
+The contract the frontend is built against. One vocabulary for duty status throughout: `OFF_DUTY`, `SLEEPER_BERTH`, `DRIVING`, `ON_DUTY_NOT_DRIVING`, in that row order.
 
 ### `POST /api/trips/plan/` → 201
 
@@ -749,6 +721,7 @@ route         { geometry: [[lat, lng], ...], bbox: [[s, w], [n, e]] }
 stops         [ { kind, at_mile, lat, lng, label, arrive, depart, duration_hours } ]
 days          [ DaySheet ]
 violations    []          always empty, typed, present for ELD parity
+stored        bool        false when saving the plan failed; no /trip/:id link would resolve
 ```
 
 `kind` is one of `START`, `PICKUP`, `DROPOFF`, `FUEL`, `BREAK`, `REST`, `RESTART`. `arrive` and `depart` are ISO 8601 in the home terminal zone.
@@ -792,11 +765,11 @@ The same payload, as stored. Nothing is recomputed, so a plan reads back identic
 
 The frontend reads `detail` always and treats `errors` as optional per-field highlighting. A bare `ValueError` is a bug and returns 500; only `InputError` maps to 400.
 
-`NotFoundError`, `UpstreamError` and `InputError` live in `trips/services/errors.py`.
+`NotFoundError` (and its subclass `RouteTooLongError`), `UpstreamError` and `InputError` live in `trips/services/errors.py`.
 
 ### Throttling
 
-`AnonRateThrottle` on the plan endpoint at `5/min` and `100/day`, sized to stay under the ORS free quota.
+`AnonRateThrottle` on the plan endpoint at `20/min` and `300/day` per client. The ORS quota and the geocode cache (§28), not this throttle, bound upstream spend.
 
 ---
 
@@ -813,6 +786,9 @@ interface RequiredLimits {
   drive_limit_min: number;
   window_limit_min: number;
   break_after_drive_min: number;
+  break_duration_min: number;      // empty-state copy
+  qualifying_rest_min: number;     // empty-state copy
+  cycle_days: number;              // page header, cycle meter note, 60/7 caption
 }
 
 parseLimits(limits: Limits): RequiredLimits
@@ -826,7 +802,7 @@ parseLimits(limits: Limits): RequiredLimits
 
 ## 27. Visual direction
 
-UI and UX are evaluated alongside accuracy, so the app is not allowed to look like an untouched component-library default.
+The interface is meant to read as a working tool, not as an untouched component-library default.
 
 The design idea is a deliberate contrast between two surfaces:
 
@@ -850,7 +826,7 @@ Concrete rules:
 
 ## 28. Geocode cache
 
-A free ORS key allows roughly 100 reverse lookups a day. A long plan spends about 11. Without a cache the hosted demo stops naming stops correctly after nine trips and then stops working, which is worse than any bug in this codebase, because the reviewer opens the live URL cold.
+A free ORS key allows roughly 100 reverse lookups a day. A long plan spends about 11. Without a cache the hosted demo stops naming stops correctly after nine trips and then stops working, and a public demo is usually opened cold by someone who never sees the server logs.
 
 So geocode results persist in the database, not only in `lru_cache`:
 
@@ -860,7 +836,7 @@ So geocode results persist in the database, not only in `lru_cache`:
 - Entries do not expire. A town does not move, and a stale label is better than a dead demo
 - The cache lives in `trips/services/geocode_cache.py`, which may import Django. `geocode.py` calls it. `hos/` purity is unaffected
 
-A management command pre-warms a route so the demo trips are cached before the link goes out:
+A management command pre-warms a route so the demo trips are cached before anyone opens them:
 
 ```
 python manage.py prewarm "Amarillo, TX" "Dumas, TX" "Denver, CO" --cycle-hours 0,20,50
@@ -874,8 +850,3 @@ It runs the planner once and reports how many lookups hit the cache against the 
 
 Vercel needs a rewrite sending `/trip/*` to `index.html`, or every shared link 404s.
 
----
-
-## 29. §6 is regenerated, not maintained by hand
-
-The file tree in §6 was written before the build and has drifted three times. It is now regenerated from the actual repository at the deploy step and should be treated as a snapshot, not as a plan. The layering rules in §7 are what actually constrain where a file may live; the tree only records where files ended up.
