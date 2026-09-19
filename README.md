@@ -2,75 +2,75 @@
 
 **Live app: https://spotter-eld-eight.vercel.app** · API: https://spotter-eld-api-p2rq.onrender.com · Source: https://github.com/abhaybansal0322/spotter-eld
 
-The API runs on Render's free tier, which sleeps after 15 idle minutes. If it has slept, the first request takes up to 45 seconds while it wakes; the loading screen says so. After that, plans return in 1 to 8 seconds.
+The API is on Render's free tier. If nobody has used it for 15 minutes it goes to sleep, and the first request then takes up to 45 seconds; the loading screen tells you that's what is happening. Once it's awake, a plan comes back in 1 to 8 seconds.
 
 ![A filled Driver's Daily Log produced by the app for a Los Angeles to Boston trip](docs/images/log-sheet.png)
 
 ## What it does
 
-Given where a property-carrying truck is now, a pickup, a dropoff and the hours already used in the driver's 70-hour/8-day cycle, spotter-eld routes the trip for a truck and schedules it under the FMCSA hours-of-service rules: driving, the 30-minute break, 10-hour rests, fuel stops and, when the cycle runs out, a 34-hour restart. It shows the route and every stop on a map and a timeline, and draws one filled-in Driver's Daily Log per calendar day, the same paper form a driver would complete by hand. Every plan gets a shareable link.
+You give it four things: where a property-carrying truck is now, the pickup, the dropoff, and how many hours the driver has already used in the 70-hour/8-day cycle. It routes the trip on a truck profile and schedules it under the FMCSA hours-of-service rules, inserting 30-minute breaks, 10-hour rests, fuel stops and, if the cycle runs out, a 34-hour restart. The result is a map and a stop timeline, plus one filled-in Driver's Daily Log per calendar day, drawn as the paper form a driver fills in by hand. Every plan gets a link you can share.
 
 ## Assumptions
 
-The assignment fixes the ruleset (property-carrying, 70 hours/8 days, no adverse conditions), a fuel stop at least every 1,000 miles, and one hour each for pickup and dropoff. Everything else below is a choice, stated so it can be checked.
+The assignment fixes the ruleset (property-carrying, 70 hours/8 days, no adverse conditions), a fuel stop at least every 1,000 miles, and one hour each for pickup and dropoff. The rest of this table is my call, written down so you can check it.
 
 | Assumption | Value | Basis |
 |---|---|---|
-| Average speed | 55 mph | A standard planning figure for loaded trucks; no speed was given. Driving time is derived from road miles at this speed |
+| Average speed | 55 mph | Common planning figure for a loaded truck; the assignment gives no speed. Driving time is road miles at this speed |
 | Pickup and dropoff | 1 hour each, on duty not driving | Given. Logged on line 4 as on-duty time (§395.2) |
-| Fuel stop | 30 minutes, on duty not driving, at least every 1,000 miles | Frequency given, duration chosen. Fueling is on-duty time under the §395.2 definition ("servicing... including fueling"), so it burns the 14-hour window and the cycle, not driving time |
-| Starting condition | Fresh off 10 consecutive hours off duty | Only a cycle-hours total is supplied, no duty history, so the 11-hour and 14-hour clocks start at zero (§395.3(a)(1)) |
-| Rest status | 10-hour rests logged as sleeper berth, 30-minute breaks as off duty | Both are legal for either purpose (§395.3(a)(1), §395.3(a)(3)(ii)); one fixed convention keeps logs consistent |
-| Prior cycle hours | One lump that never rolls off within the 8-day window | The input is a single total, not a per-day history. It can only overstate the cycle, never understate it (§395.3(b)(2)) |
-| Time zone | One home terminal zone for every time on every sheet, default America/New_York | §395.8 requires the home terminal's time standard even when the route crosses zones. The start time and zone sit behind an Advanced toggle |
-| Start time | Now, rounded down to 15 minutes, unless set | Every derived boundary lands on the log's 15-minute grid, so nothing is rounded afterwards |
+| Fuel stop | 30 minutes, on duty not driving, at least every 1,000 miles | The frequency is given and I picked the duration. §395.2 counts fueling as on-duty time ("servicing... including fueling"), so a stop uses up the 14-hour window and the cycle but not driving time |
+| Starting condition | Fresh off 10 consecutive hours off duty | The input is a cycle-hours total with no duty history, so the 11-hour and 14-hour clocks start at zero (§395.3(a)(1)) |
+| Rest status | 10-hour rests logged as sleeper berth, 30-minute breaks as off duty | Either status is legal for either (§395.3(a)(1), §395.3(a)(3)(ii)). I picked one convention so every log reads the same way |
+| Prior cycle hours | Treated as one lump that stays in the 8-day window | The input is a single number with no per-day breakdown. Treating it this way can overstate the cycle and can never understate it (§395.3(b)(2)) |
+| Time zone | Every time on every sheet is in one home terminal zone, America/New_York by default | §395.8 requires the home terminal's time standard even when the route crosses zones. Start time and zone are under Advanced on the form |
+| Start time | Now, rounded down to 15 minutes, unless you set one | Every boundary then falls on the log's 15-minute grid, so nothing needs rounding later |
 
 ## Hours-of-service rules
 
-Implemented, each as a small rule class whose driving allowance the engine takes the minimum of:
+Each rule is a small class that reports how many more minutes of driving it allows. The engine drives for the smallest of those numbers, then inserts whatever rest the binding rule needs.
 
-- **11-hour driving limit**, §395.3(a)(3): at most 11 hours of driving after 10 consecutive hours off duty.
-- **14-hour window**, §395.3(a)(2): no driving after the 14th hour since work began. Breaks do not pause it. It forbids driving only, so on-duty work at a dropoff can still finish after hour 14.
-- **30-minute break**, §395.3(a)(3)(ii): required after 8 cumulative hours of driving. Any 30 consecutive non-driving minutes count, so a one-hour pickup or a fuel stop clears it and no redundant break is inserted.
-- **70 hours in 8 days**, §395.3(b)(2): a rolling window over driving plus on-duty time. At 70, driving stops.
-- **34-hour restart**, §395.3(c): inserted when the cycle blocks the trip, resetting it to zero.
-- **Record of duty status**, §395.8: date, miles, per-status totals that sum to 24, remarks with a city and state at every duty change, and the recap boxes.
+- 11-hour driving limit, §395.3(a)(3). At most 11 hours behind the wheel after 10 consecutive hours off.
+- 14-hour window, §395.3(a)(2). No driving after the 14th hour since work began, and breaks don't pause the clock. It only stops driving, so on-duty work such as unloading at the dropoff can still finish after hour 14.
+- 30-minute break, §395.3(a)(3)(ii). Required after 8 cumulative hours of driving. Any 30 consecutive minutes off the wheel count, so an hour-long pickup or a fuel stop clears it and the planner doesn't add a redundant break.
+- 70 hours in 8 days, §395.3(b)(2). A rolling window over driving plus other on-duty time. At 70, driving stops.
+- 34-hour restart, §395.3(c). Inserted when the cycle would block the trip, and it resets the cycle to zero.
+- Record of duty status, §395.8. Date, miles, per-status totals that add up to 24, a city and state at every duty change, and the recap boxes.
 
-Out of scope, present only as named placeholders that raise `NotImplementedError`:
+Deliberately left out. Each exists as a named class that raises `NotImplementedError`:
 
-- **Adverse driving conditions**, §395.1(b)(1): the assignment assumes none.
-- **Split sleeper berth**, §395.1(g): a pairing of rest periods the planner never needs, since it always takes a full 10-hour rest.
-- **Short-haul exception**, §395.1(e): for drivers who return to their work reporting location within 14 hours; not this use case.
-- **60 hours in 7 days**, §395.3(b)(1): the assignment specifies the 70/8 cycle. The sheet keeps the form's 60/7 recap column and marks it unused.
+- Adverse driving conditions, §395.1(b)(1). The assignment assumes none.
+- Split sleeper berth, §395.1(g). The planner always takes a full 10-hour rest, so it never needs to pair shorter ones.
+- Short-haul exception, §395.1(e). That's for drivers who return to their reporting location within 14 hours, which isn't this use case.
+- 60 hours in 7 days, §395.3(b)(1). The assignment specifies 70/8. The sheet keeps the form's 60/7 recap column and marks it unused.
 
 ## Accepted simplifications
 
-Each is legal and each errs conservative.
+All of these are legal, and each errs on the conservative side.
 
-- **The two mileage boxes match.** "Total mileage today" is the vehicle's miles and "total miles driving today" the driver's. They differ only with a co-driver or another driver in the same truck, and every plan here is solo. Both come from route positions, so a trip's sheets add up to its route distance.
-- **Daylight-saving changeovers are off by an hour.** Every day is treated as 1,440 minutes on the wall clock.
-- **A blocked cycle always gets a full 34-hour restart**, rather than waiting for the oldest day to roll off, which would need simulating idle days for a marginal gain.
-- **A 30-minute break can land shortly before a forced 10-hour rest** and do little useful work, which is how real paper logs look.
-- **The rolling 8-day drop-off never fires on a generated trip.** The engine plans at the limits, so the cycle reaches 70 and takes a restart before eight days pass. The drop-off is implemented and tested for a driver who arrives with a partial cycle.
+- "Total mileage today" and "total miles driving today" always show the same number. The first is the truck's miles and the second the driver's, and they only differ with a co-driver or someone else driving the same truck. Every plan here is solo. Both come from route positions, so a trip's sheets add up to its route distance.
+- A trip across a daylight-saving changeover is off by an hour, because every day is treated as 1,440 wall-clock minutes.
+- When the cycle blocks the trip, the planner takes a full 34-hour restart. Waiting for the oldest day to roll off instead would mean simulating idle days, for very little gain.
+- A 30-minute break can land shortly before a forced 10-hour rest, where it does little. Real paper logs look like this too.
+- The rolling 8-day drop-off never fires on a generated trip. The engine plans right up to the limits, so the cycle hits 70 and takes a restart before eight days pass. The drop-off code is there and tested, for a driver who shows up with a partly used cycle.
 
 ## OpenRouteService quota
 
-Routing and geocoding use OpenRouteService's free tier. Its limits, measured from response headers on a free key, are far below the published figures: **200 directions, 100 geocode searches and roughly 100 reverse geocodes per day**. When a quota runs out, ORS answers HTTP 403 with `{"error": "Quota exceeded"}` and no rate-limit headers.
+Routing and geocoding go through OpenRouteService's free tier. I measured its limits from the response headers on a free key, and they're far below the published figures: **200 directions, 100 geocode searches and roughly 100 reverse geocodes per day**. When a quota runs out, ORS returns HTTP 403 with `{"error": "Quota exceeded"}` and no rate-limit headers.
 
-A long plan spends 3 searches, 1 route and about 11 reverse lookups, one per inserted stop, so an uncached key would stop naming stops after about nine long trips. Stop names are best effort: a failed reverse lookup degrades a label to a road and a nearby resolved town (`"I 80 near Ottawa, IL"`, or with the distance when that town is more than 50 miles away) instead of failing the plan. **A label like that means the quota ran out, not that the planner is wrong.**
+One long plan uses 3 searches, 1 route and about 11 reverse lookups (one for each inserted stop), so without a cache the key stops naming stops after about nine long trips. Naming is best effort. If a reverse lookup fails, the stop gets a road and the nearest town already resolved on that trip, like `"I 80 near Ottawa, IL"`, with the distance added when that town is more than 50 miles away. The plan itself still succeeds. **If you see a label like that, the quota ran out; the schedule is still correct.**
 
-To keep the demo inside the quota, geocode results persist in Postgres (`GeocodeCache`) behind the in-process cache. Answers never expire, genuine no-matches are cached, and quota or server failures are not. `python manage.py prewarm FROM PICKUP TO --cycle-hours 0,20,50` plans a route once per cycle-hours value to fill the cache and reports hits against ORS calls; a warmed long plan costs 1 ORS call, the route. Rest and fuel stops land at the same miles whatever the start time, so they stay cached, but the remark written at each midnight falls somewhere else when the start time changes, so a plan at a new start time typically costs one or two extra reverse lookups.
+To stay inside the quota, geocode results are stored in Postgres (`GeocodeCache`), with an in-process cache in front. Stored answers never expire. Genuine no-matches are cached too, but quota errors and server errors aren't, since those are temporary. `python manage.py prewarm FROM PICKUP TO --cycle-hours 0,20,50` plans a route once for each cycle-hours value, fills the cache, and reports how many lookups hit the cache against how many called ORS. A warmed long plan makes exactly one ORS call, for the route. Rest and fuel stops land at the same miles whatever the start time, so they stay cached. The remark written at each midnight moves when the start time changes, though, so a plan at a new start time usually costs one or two extra reverse lookups.
 
-The form's two demo presets, Amarillo to Denver and Los Angeles to Boston, are prewarmed, so they spend almost no geocode quota: the short one plans in about a second and the long one in about seven, nearly all of it the uncached route itself. Address autocomplete is left out on purpose: it would spend a geocode search per keystroke from the same 100-a-day budget that planning uses.
+The two demo presets on the form (Amarillo to Denver, and Los Angeles to Boston) are prewarmed, so they use almost no geocode quota. The short one plans in about a second and the long one in about seven, nearly all of which is the route call, which isn't cached. I left out address autocomplete on purpose: it would spend a geocode search on every keystroke, out of the same 100-a-day budget that planning needs.
 
 ## Implementation notes
 
-- **Reverse geocoding uses `layers=address`.** With admin-only layers, Pelias runs a point-in-polygon lookup that silently ignores the search radius and answers with the county wherever a stop is outside town limits. Nearby addresses carry their town, and the radius (15 km, then 150 km) is honoured.
-- **Routes avoid border crossings.** The unconstrained truck route from Los Angeles to Boston cuts through Ontario, and a Part 395 log should not.
-- **Addresses ending in a state code must match that state.** Pelias almost never reports no match: "Atlantis, ZZ" resolves to Atlantis, FL with full confidence. Without the check an unknown address would be routed to the wrong city instead of rejected.
-- **Trips over the routing limit return a readable 422.** ORS rejects routes whose approximate length exceeds 6,000 km; the API says the trip is too long rather than that no route exists.
-- **Naming lookups round to the nearest 5 miles.** A town does not change within 5 miles, and the shared point lets cached answers serve nearby stops. Stops keep their exact miles.
-- **Saving a plan is best effort.** If the database write fails the plan is still returned, marked `stored: false`, and the share link is hidden.
+- Reverse geocoding asks for `layers=address`. With admin-only layers, Pelias does a point-in-polygon lookup that silently ignores the search radius and returns the county whenever a stop is outside town limits. Nearby addresses carry the name of their town, and the radius (15 km, then 150 km) actually gets used.
+- Routes avoid border crossings. The unconstrained truck route from Los Angeles to Boston goes through Ontario, and a Part 395 log shouldn't.
+- An address ending in a state code has to resolve inside that state. Pelias almost never reports no match: "Atlantis, ZZ" comes back as Atlantis, FL with full confidence. Without this check, a typo would get routed to some other city with nothing flagged.
+- ORS rejects routes longer than about 6,000 km. The API turns that into a 422 that says the trip is too long, so it doesn't read as "no route found".
+- Reverse lookups use the route point at the nearest 5-mile mark. A town doesn't change within 5 miles, and sharing the point lets cached answers cover nearby stops. The stops themselves keep their exact miles.
+- Saving a plan is best effort. If the database write fails, you still get the plan back, marked `stored: false`, and the share link is hidden.
 
 ## Architecture
 
@@ -85,19 +85,19 @@ views  ->  serializers  ->  services/planner
               route_index (pure)
 ```
 
-The hours-of-service core, `backend/trips/services/hos/`, is pure: integer minutes since trip start, no Django, no HTTP client, no `datetime`. Two tests walk the AST to enforce the boundaries: nothing in `hos/` imports Django, `requests` or `datetime`, and only `http.py`, `geocode.py` and `routing.py` import an HTTP client. Every limit lives once in `hos/constants.py` and reaches the frontend through the API's `limits` object, so no regulatory number is hardcoded in TypeScript. The planner is the only module that knows about both geography and hours of service.
+The hours-of-service engine in `backend/trips/services/hos/` is pure: it works in integer minutes since trip start and imports no Django, no HTTP client and no `datetime`. Two tests parse the source to enforce the boundaries. One fails if anything in `hos/` imports Django, `requests` or `datetime`; the other fails if anything besides `http.py`, `geocode.py` and `routing.py` imports an HTTP client. Every limit is defined once, in `hos/constants.py`, and reaches the frontend through the API's `limits` object, so no regulatory number is hardcoded in TypeScript. The planner is the only module that deals with both geography and hours of service.
 
-On the frontend, all log-grid arithmetic (minutes to x, status to y, the continuous duty line, the three tick heights, remark placement) lives in `frontend/src/lib/logGrid.ts` as pure functions; `LogGrid.tsx` only places what it is given.
+On the frontend, all the log-grid maths (minutes to x, status to y, the continuous duty line, the three tick heights, where remarks go) lives as pure functions in `frontend/src/lib/logGrid.ts`. `LogGrid.tsx` just places what it's given.
 
-The full design record, including the API contract and the reasoning behind each decision, is in [docs/DESIGN.md](docs/DESIGN.md).
+The full design record, with the API contract and the reasoning behind each decision, is in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Testing
 
-278 backend tests (pytest) and 135 frontend tests (vitest). Both suites run offline: ORS is faked at a single seam, `services/http.py`, with canned payloads, and the frontend mocks its API client. The worked example on page 18 of the FMCSA *Interstate Truck Driver's Guide to Hours of Service* (John Doe, Richmond VA to Newark NJ) is encoded as a fixture and must reproduce the guide's totals: 10 hours off duty, 1.75 sleeper berth, 7.75 driving and 4.5 on duty, summing to 24. Every generated sheet in every test is asserted to cover exactly 24 hours.
+278 backend tests (pytest) and 138 frontend tests (vitest), and both suites run offline. On the backend, ORS is faked at one seam, `services/http.py`, with canned payloads; the frontend mocks its API client. The worked example on page 18 of the FMCSA *Interstate Truck Driver's Guide to Hours of Service* (John Doe, Richmond VA to Newark NJ) is a test fixture, and it has to reproduce the guide's totals: 10 hours off duty, 1.75 sleeper berth, 7.75 driving and 4.5 on duty. Every sheet generated in any test is checked to cover exactly 24 hours.
 
 ## Local setup
 
-Python 3.12 and Node 20.19 or later.
+You need Python 3.12 and Node 20.19 or later.
 
 Backend, from `backend/`:
 
@@ -109,7 +109,7 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-Without `DATABASE_URL` it uses SQLite. `manage.py` defaults to the dev settings.
+With no `DATABASE_URL` set it uses SQLite, and `manage.py` defaults to the dev settings.
 
 Frontend, from `frontend/`:
 
@@ -126,11 +126,12 @@ cd backend && pytest
 cd frontend && npm test && npm run typecheck
 ```
 
-Environment variables, all listed in the two `.env.example` files: `ORS_API_KEY`, `SECRET_KEY`, `DATABASE_URL`, `DJANGO_ENV`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` and `NUM_PROXIES` for the backend, `VITE_API_URL` for the frontend.
+The two `.env.example` files list every environment variable. The backend reads `ORS_API_KEY`, `SECRET_KEY`, `DATABASE_URL`, `DJANGO_ENV`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` and `NUM_PROXIES`; the frontend reads `VITE_API_URL`.
 
 ## Deploying
 
-- **Backend on Render** from `render.yaml`: a free web service and a free Postgres database. Free services cannot run a pre-deploy command, so `migrate` and `createcachetable` run in the build command. `NUM_PROXIES=3`: on Render, `X-Forwarded-For` arrives as client, Cloudflare edge, Render internal proxy, so the throttle takes the third entry from the end. That is the real client IP, and a forged header cannot change it. The count is a property of the host; verify it against the throttle's cache keys if the hosting changes. Gunicorn runs two workers with a 60-second timeout.
-- **Keep-warm**: `.github/workflows/keep-warm.yml` pings `/api/health/` every 5 minutes so the free instance never sleeps; GitHub's schedule can run late, and the instance sleeps at 15.
-- **Frontend on Vercel** with `frontend` as the root directory and `VITE_API_URL` set to the Render URL. `frontend/vercel.json` rewrites `/trip/*` to `index.html`; without it every shared link would 404.
-- **The free Postgres database expires 30 days after creation, around 17 October 2026**, and is deleted 14 days later, taking stored trips, share links and the geocode cache with it.
+- The backend deploys to Render from `render.yaml`: a free web service plus a free Postgres database. Free services can't run a pre-deploy command, so `migrate` and `createcachetable` run in the build command. Gunicorn runs two workers with a 60-second timeout.
+- `NUM_PROXIES=3`. On Render, `X-Forwarded-For` arrives as client, then Cloudflare edge, then Render's internal proxy, so the throttle reads the third entry from the end. That's the real client IP, and a forged header can't change it. The number depends on the host, so if the hosting changes, check it again against the throttle's cache keys.
+- `.github/workflows/keep-warm.yml` pings `/api/health/` every 5 minutes so the free instance never goes to sleep. It's every 5 rather than every 10 because GitHub's scheduler can run late and the instance sleeps at 15.
+- The frontend deploys to Vercel with `frontend` as the root directory and `VITE_API_URL` pointing at the Render URL. `frontend/vercel.json` rewrites `/trip/*` to `index.html`; without it, every shared link would 404.
+- The free Postgres database expires 30 days after it was created, around 17 October 2026, and is deleted 14 days after that. Stored trips, share links and the geocode cache go with it.
