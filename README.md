@@ -128,6 +128,6 @@ Environment variables, all listed in the two `.env.example` files: `ORS_API_KEY`
 
 ## Deploying
 
-- **Backend on Render** from `render.yaml`: a free web service and a free Postgres database. Free services cannot run a pre-deploy command, so `migrate` and `createcachetable` run in the build command. `NUM_PROXIES=2` tells the throttle how many proxies Render puts in front of Django, so it limits each client rather than Render's internal addresses. Gunicorn runs two workers with a 60-second timeout.
+- **Backend on Render** from `render.yaml`: a free web service and a free Postgres database. Free services cannot run a pre-deploy command, so `migrate` and `createcachetable` run in the build command. `NUM_PROXIES` tells the throttle how many proxies append to `X-Forwarded-For` in front of Django, so it can identify the client. It has to match the host: on Render, 1 identifies an internal Render proxy and 2 a Cloudflare edge, so the per-client limit depends on setting it correctly. Gunicorn runs two workers with a 60-second timeout.
 - **Frontend on Vercel** with `frontend` as the root directory and `VITE_API_URL` set to the Render URL. `frontend/vercel.json` rewrites `/trip/*` to `index.html`; without it every shared link would 404.
 - **The free Postgres database expires 30 days after creation, around 17 October 2026**, and is deleted 14 days later, taking stored trips, share links and the geocode cache with it.
