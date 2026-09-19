@@ -61,7 +61,7 @@ A long plan spends 3 searches, 1 route and about 11 reverse lookups, one per ins
 
 To keep the demo inside the quota, geocode results persist in Postgres (`GeocodeCache`) behind the in-process cache. Answers never expire, genuine no-matches are cached, and quota or server failures are not. `python manage.py prewarm FROM PICKUP TO --cycle-hours 0,20,50` plans a route once per cycle-hours value to fill the cache and reports hits against ORS calls; a warmed long plan costs 1 ORS call, the route. Rest and fuel stops land at the same miles whatever the start time, so they stay cached, but the remark written at each midnight falls somewhere else when the start time changes, so a plan at a new start time typically costs one or two extra reverse lookups.
 
-The form's two demo presets, Amarillo to Denver and Los Angeles to Boston, are prewarmed, so they make no geocoding calls: the short one plans in about a second and the long one in about seven, nearly all of it the uncached route itself. Address autocomplete is left out on purpose: it would spend a geocode search per keystroke from the same 100-a-day budget that planning uses.
+The form's two demo presets, Amarillo to Denver and Los Angeles to Boston, are prewarmed, so they spend almost no geocode quota: the short one plans in about a second and the long one in about seven, nearly all of it the uncached route itself. Address autocomplete is left out on purpose: it would spend a geocode search per keystroke from the same 100-a-day budget that planning uses.
 
 ## Implementation notes
 
