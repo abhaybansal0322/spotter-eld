@@ -1,4 +1,6 @@
 """DaySheet assembly, including the FMCSA John Doe reference log from page 18 of the guide."""
+import pytest
+
 from trips.services.hos.constants import MINUTES_PER_DAY
 from trips.services.hos.engine import plan_duty
 from trips.services.hos.enums import DutyStatus, StopKind
@@ -237,3 +239,42 @@ def test_trip_starting_at_midnight_logs_start_location_on_day_zero():
 
     assert sheet.segments[0] == (ON, 0, 60)
     assert sheet.remarks == ((0, "Richmond, VA"), (180, "Fredericksburg, VA"))
+
+
+def test_day_miles_come_from_positions_not_minutes_at_55_mph():
+    # Amarillo to Dumas to Denver, live: 48.1 and 374.1 road miles. Each leg's driving time rounds up to the grid
+    # (60 and 420 minutes), so minutes at 55 mph would claim 440 miles for a 422.2-mile route.
+    waypoints = (Waypoint(0.0, StopKind.START, "Amarillo, TX", 0), Waypoint(48.1, StopKind.PICKUP, "Dumas, TX", 60),
+                 Waypoint(422.2, StopKind.DROPOFF, "Denver, CO", 60))
+    events = plan_duty(waypoints, DriverState.initial(0), 1080)
+
+    (sheet,) = _sheets(events, 1080)
+
+    assert sheet.totals[DRIVE] == 480
+    assert sheet.total_miles_driving == pytest.approx(422.2)
+
+
+def test_multi_day_sheets_add_up_to_the_route_distance():
+    waypoints = (Waypoint(0.0, StopKind.START, "A", 0), Waypoint(97.3, StopKind.PICKUP, "P", 60),
+                 Waypoint(2004.6, StopKind.DROPOFF, "B", 60))
+    events = plan_duty(waypoints, DriverState.initial(600), 345)
+
+    sheets = _sheets(events, 345)
+
+    assert len(sheets) >= 3
+    assert sum(sheet.total_miles_driving for sheet in sheets) == pytest.approx(2004.6, abs=1e-9)
+    assert all(sheet.total_miles_driving >= 0 for sheet in sheets)
+    # A day of driving never claims more than its minutes allow at 55 mph: positions only ever remove the rounding.
+    assert all(sheet.total_miles_driving <= sheet.totals[DRIVE] * 55 / 60 + 1e-9 for sheet in sheets)
+
+
+def test_a_drive_cut_at_midnight_shares_its_miles_by_minutes():
+    events = [
+        _event(DRIVE, 0, 120, location="A", at_mile=0.0),  # 22:00 to 00:00, then on past midnight
+        _event(DRIVE, 120, 60, location="A", at_mile=0.0),
+        _event(ON, 180, 60, kind=StopKind.DROPOFF, location="B", at_mile=150.0),
+    ]
+
+    first, second = _sheets(events, 120)
+
+    assert (first.total_miles_driving, second.total_miles_driving) == (100.0, 50.0)

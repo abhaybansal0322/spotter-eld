@@ -86,7 +86,8 @@ export function RouteMap({ route, stops, timezone, highlightedIndex, selectedInd
         <TileLayer url={OSM_TILES} attribution={OSM_ATTRIBUTION} />
         <FitToRoute bbox={route.bbox} />
         <FlyToStop stop={selectedIndex === null ? undefined : stops[selectedIndex]} />
-        <Polyline positions={route.geometry} pathOptions={{ className: 'route-map__line' }} />
+        {/* className must be a direct prop: react-leaflet applies pathOptions with setStyle, which ignores className. */}
+        <Polyline positions={route.geometry} className="route-map__line" />
         <StopMarkers
           stops={stops}
           timezone={timezone}

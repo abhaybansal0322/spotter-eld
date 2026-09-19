@@ -2,10 +2,8 @@
 from dataclasses import dataclass
 
 from .constants import (
-    AVG_SPEED_MPH,
     CYCLE_LIMIT_MIN,
     MINUTES_PER_DAY,
-    MINUTES_PER_HOUR,
     RECAP_A_DAYS,
     RECAP_C_DAYS,
 )
@@ -78,6 +76,36 @@ def _day_log(events, day_start, is_first_day, is_last_day):
     return tuple(tuple(segment) for segment in segments), tuple(remarks)
 
 
+def _miles_driven_per_day(day_buckets):
+    """Road miles driven on each day: every driving event spans from its own mile to the next event's mile.
+
+    Miles come from the events' positions, not from driving minutes at AVG_SPEED_MPH. Driving time to a stop is
+    rounded up to the 15-minute grid, so minutes times speed overstates the distance; positions do not, because
+    the engine sets the mile to the stop's true mile on arrival. So a trip's sheets add up to its route distance.
+
+    Consecutive driving events that start at the same mile are one drive cut at midnight by split_at_midnight;
+    their span is shared between the days in proportion to the minutes driven on each.
+    """
+    flat = [(day, event) for day, events in enumerate(day_buckets) for event in events]
+    miles = [0.0] * len(day_buckets)
+    index = 0
+    while index < len(flat):
+        day, event = flat[index]
+        if event.status is not DutyStatus.DRIVING:
+            index += 1
+            continue
+        run_end = index + 1
+        while run_end < len(flat) and flat[run_end][1].status is DutyStatus.DRIVING and flat[run_end][1].at_mile == event.at_mile:
+            run_end += 1
+        end_mile = flat[run_end][1].at_mile if run_end < len(flat) else event.at_mile
+        run = flat[index:run_end]
+        run_minutes = sum(piece.duration_min for _, piece in run)
+        for piece_day, piece in run:
+            miles[piece_day] += (end_mile - event.at_mile) * piece.duration_min / run_minutes
+        index = run_end
+    return miles
+
+
 def _window_total(on_duty, prior_cycle_min, restart_day_indices, day, days):
     """On-duty minutes over the `days` days ending today, reaching back no further than the latest restart.
 
@@ -122,6 +150,7 @@ def build_sheets(day_buckets, minutes_to_first_midnight, prior_cycle_min, restar
         logs.append((segments, remarks, totals))
         on_duty.append(totals[DutyStatus.DRIVING] + totals[DutyStatus.ON_DUTY_NOT_DRIVING])
 
+    miles_driven = _miles_driven_per_day(day_buckets)
     sheets = []
     for index, (segments, remarks, totals) in enumerate(logs):
         a_total = _window_total(on_duty, prior_cycle_min, restart_day_indices, index, RECAP_A_DAYS)
@@ -129,7 +158,7 @@ def build_sheets(day_buckets, minutes_to_first_midnight, prior_cycle_min, restar
             date_index=index,
             segments=segments,
             totals=totals,
-            total_miles_driving=totals[DutyStatus.DRIVING] / MINUTES_PER_HOUR * AVG_SPEED_MPH,
+            total_miles_driving=miles_driven[index],
             remarks=remarks,
             recap=Recap(
                 on_duty_today=on_duty[index],

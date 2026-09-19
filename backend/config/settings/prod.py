@@ -29,9 +29,11 @@ DATABASES = {
     "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600),
 }
 
-# Render's proxy appends the client address to X-Forwarded-For. Trust exactly one hop, so the anonymous throttle
-# keys on the real client and a client-supplied X-Forwarded-For cannot mint a fresh identity per request.
-REST_FRAMEWORK = {**REST_FRAMEWORK, "NUM_PROXIES": 1}
+# How many proxies append to X-Forwarded-For in front of Django. DRF takes the entry that many places from the end as
+# the client, so the anonymous throttle keys on the real client and a forged X-Forwarded-For cannot mint a new identity.
+# The right count is a fact about the host, not the code: with 1 on Render the identity was an internal 10.x proxy,
+# shared by every visitor. Set per deployment; defaults to 1.
+REST_FRAMEWORK = {**REST_FRAMEWORK, "NUM_PROXIES": int(os.environ.get("NUM_PROXIES", "1"))}
 
 # Throttle counts live in the cache. The default in-process cache gives every gunicorn worker its own count, so the
 # 5/min limit would really be 5/min per worker. A table in Postgres is shared by all of them; createcachetable makes it.
