@@ -29,7 +29,8 @@ export const HOME_TERMINAL_ZONES: readonly { value: string; label: string }[] = 
 ];
 
 /**
- * One-click demo routes. Their geocoding is prewarmed in the production cache, so they plan in about a second.
+ * One-click demo routes. Their geocoding is prewarmed in the production cache, so they spend no geocode quota; the only
+ * upstream call left is the route itself (about 1 s for the short one, about 7 s for the long one).
  * A preset fills the three locations only; cycle hours stay as typed so the same route can be tried at 0, 20 or 50.
  * There is deliberately no address autocomplete: every keystroke would spend the geocode quota that planning needs.
  */
