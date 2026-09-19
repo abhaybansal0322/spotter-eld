@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { LIMITS } from '../../test/fixtures';
@@ -85,6 +85,34 @@ describe('TripForm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Plan trip' }));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ current_cycle_used: 90 }));
+  });
+
+  it('offers both demo routes above the location fields', () => {
+    render(<TripForm onSubmit={vi.fn()} loading={false} cycleLimitHours={CYCLE_HOURS} />);
+
+    const group = screen.getByRole('group', { name: 'Or fill in a demo route' });
+    expect(within(group).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Amarillo → Denver 1 day',
+      'Los Angeles → Boston multi-day',
+    ]);
+    const order = Array.from(document.querySelectorAll('[role=group], input[name=current_location]'));
+    expect(order[0]).toBe(group); // before the fields, so it reads as a shortcut
+  });
+
+  it.each([
+    ['Amarillo → Denver 1 day', 'Amarillo, TX', 'Dumas, TX', 'Denver, CO'],
+    ['Los Angeles → Boston multi-day', 'Los Angeles, CA', 'Las Vegas, NV', 'Boston, MA'],
+  ])('fills the three locations from the %s preset without submitting or touching cycle hours', (name, current, pickup, dropoff) => {
+    const onSubmit = vi.fn();
+    render(<TripForm onSubmit={onSubmit} loading={false} cycleLimitHours={CYCLE_HOURS} />);
+    fill('Current cycle used', '33.5');
+
+    fireEvent.click(screen.getByRole('button', { name }));
+
+    const value = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value;
+    expect([value('Current location'), value('Pickup location'), value('Dropoff location')]).toEqual([current, pickup, dropoff]);
+    expect(value('Current cycle used')).toBe('33.5');
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it('renders a server field error against its own input', () => {

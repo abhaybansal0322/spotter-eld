@@ -1,0 +1,29 @@
+# Keeps the Render free-tier API awake. Render sleeps a free service after 15 idle minutes and takes about 45 seconds
+# to wake, which a first-time visitor reads as a broken app. Pinging /api/health/ every 5 minutes keeps it warm:
+# 5 rather than 10 because GitHub's scheduler often runs late under load, and a late 10-minute ping can land after
+# the 15-minute sleep. The health endpoint touches no database and no external API, so the pings cost nothing else.
+name: keep-warm
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping the API health endpoint
+        run: |
+          # --max-time covers a cold wake (about 45 seconds measured) with room to spare. Only a non-200 fails the run.
+          status=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" --max-time 120 \
+            https://spotter-eld-api-p2rq.onrender.com/api/health/) || status="curl-failed"
+          echo "health: $status"
+          test "$status" = "200"

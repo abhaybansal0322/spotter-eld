@@ -28,6 +28,16 @@ export const HOME_TERMINAL_ZONES: readonly { value: string; label: string }[] = 
   { value: 'Pacific/Honolulu', label: 'Hawaii (Pacific/Honolulu)' },
 ];
 
+/**
+ * One-click demo routes. Their geocoding is prewarmed in the production cache, so they plan in about a second.
+ * A preset fills the three locations only; cycle hours stay as typed so the same route can be tried at 0, 20 or 50.
+ * There is deliberately no address autocomplete: every keystroke would spend the geocode quota that planning needs.
+ */
+export const DEMO_ROUTES = [
+  { label: 'Amarillo → Denver', detail: '1 day', current_location: 'Amarillo, TX', pickup_location: 'Dumas, TX', dropoff_location: 'Denver, CO' },
+  { label: 'Los Angeles → Boston', detail: 'multi-day', current_location: 'Los Angeles, CA', pickup_location: 'Las Vegas, NV', dropoff_location: 'Boston, MA' },
+] as const;
+
 export const EMPTY_TRIP_FORM: TripFormValues = {
   current_location: '',
   pickup_location: '',

@@ -28,8 +28,9 @@ services:
         value: 3.12.13
       - key: DJANGO_ENV
         value: prod
-      - key: NUM_PROXIES  # X-Forwarded-For hops Render adds in front of Django; verified against the throttle's keys
-        value: "2"
+      # X-Forwarded-For hops in front of Django: Cloudflare's edge, then Render's internal proxy, after the client.
+      - key: NUM_PROXIES
+        value: "3"
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL

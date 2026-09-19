@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent, type ReactNode } from 'react';
 
 import { hoursFigure } from '../lib/format';
 import {
+  DEMO_ROUTES,
   EMPTY_TRIP_FORM,
   HOME_TERMINAL_ZONES,
   remainingCycleHours,
@@ -63,6 +64,26 @@ export function TripForm({ onSubmit, loading, fieldErrors, cycleLimitHours }: Tr
       <div className="trip-form__intro">
         <p className="eyebrow">New trip</p>
         <h2 className="trip-form__title">Route and hours</h2>
+      </div>
+
+      <div className="trip-form__presets" role="group" aria-labelledby={`${id}-presets`}>
+        <span className="trip-form__presets-label" id={`${id}-presets`}>
+          Or fill in a demo route
+        </span>
+        {DEMO_ROUTES.map((route) => (
+          <button
+            key={route.label}
+            type="button"
+            className="trip-form__preset"
+            onClick={() => {
+              const { current_location, pickup_location, dropoff_location } = route;
+              setValues((current) => ({ ...current, current_location, pickup_location, dropoff_location }));
+              setClientErrors({});
+            }}
+          >
+            {route.label} <span className="trip-form__preset-detail">{route.detail}</span>
+          </button>
+        ))}
       </div>
 
       {location('current_location', 'Current location', 'City, ST or street address')}
